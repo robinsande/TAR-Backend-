@@ -10,23 +10,7 @@ const {
 } = require("./middleware/errorHandler");
 
 function createCorsMiddleware() {
-  if (env.nodeEnv === "production") {
-    return cors({ origin: true });
-  }
-
-  return cors({
-    origin(origin, callback) {
-      if (
-        !origin ||
-        env.corsOrigins.includes(origin) ||
-        env.nodeEnv === "development"
-      ) {
-        return callback(null, true);
-      }
-
-      return callback(null, false);
-    },
-  });
+  return cors({ origin: true });
 }
 
 function createApp() {
