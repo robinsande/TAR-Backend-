@@ -96,6 +96,7 @@ async function createRequest(req, res) {
     requesterSignature: req.body.requesterSignature || null,
     modeOfTravel: req.body.modeOfTravel || {},
     itinerary: req.body.itinerary,
+    travelSegments: req.body.travelSegments || [],
     passengers,
     submittedAt: new Date(),
   });

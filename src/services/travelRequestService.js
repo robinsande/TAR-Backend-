@@ -26,6 +26,7 @@ function getEditableRequestSnapshot(requestDocument) {
     requesterSignature: requestDocument.requesterSignature,
     modeOfTravel: requestDocument.modeOfTravel,
     itinerary: requestDocument.itinerary,
+    travelSegments: requestDocument.travelSegments || [],
     passengers: requestDocument.passengers,
   };
 }
@@ -60,6 +61,7 @@ function applyRequestResubmission(requestDocument, payload, approverId, passenge
   requestDocument.purposeOfTrip = payload.purposeOfTrip;
   requestDocument.modeOfTravel = payload.modeOfTravel || {};
   requestDocument.itinerary = payload.itinerary;
+  requestDocument.travelSegments = payload.travelSegments || [];
   requestDocument.passengers = passengers;
   requestDocument.selected_approver_id = approverId;
   requestDocument.version += 1;

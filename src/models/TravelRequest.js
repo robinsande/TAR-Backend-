@@ -43,6 +43,17 @@ const itinerarySchema = new mongoose.Schema(
   { _id: false }
 );
 
+const travelSegmentSchema = new mongoose.Schema(
+  {
+    from: { type: String, required: true, trim: true },
+    to: { type: String, required: true, trim: true },
+    destination: { type: String, required: true, trim: true },
+    dateFrom: { type: Date, required: true },
+    dateTo: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
 const decisionSchema = new mongoose.Schema(
   {
     decidedBy: {
@@ -135,6 +146,10 @@ const travelRequestSchema = new mongoose.Schema(
     itinerary: {
       type: itinerarySchema,
       required: true,
+    },
+    travelSegments: {
+      type: [travelSegmentSchema],
+      default: [],
     },
     passengers: {
       type: [passengerSchema],

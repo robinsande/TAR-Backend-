@@ -34,6 +34,12 @@ const travelRequestBaseValidators = [
   body("itinerary.dateTo").isISO8601().withMessage("End date is required"),
   body("itinerary.destination").isString().notEmpty().withMessage("Destination is required"),
   body("itinerary.accommodationNeeded").optional().isBoolean(),
+  body("travelSegments").optional().isArray().withMessage("Travel segments must be a list"),
+  body("travelSegments.*.from").optional().isString().notEmpty(),
+  body("travelSegments.*.to").optional().isString().notEmpty(),
+  body("travelSegments.*.destination").optional().isString().notEmpty(),
+  body("travelSegments.*.dateFrom").optional().isISO8601(),
+  body("travelSegments.*.dateTo").optional().isISO8601(),
   body("passengers")
     .isArray({ min: 1 })
     .withMessage("At least one passenger is required"),
