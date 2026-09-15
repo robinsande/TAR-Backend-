@@ -58,6 +58,10 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       default: null,
     },
+    alternateApproverIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
     isActive: {
       type: Boolean,
       default: true,

@@ -136,7 +136,7 @@ async function updateUserRole(req, res) {
   }
 
   async function updateUserProfile(req, res) {
-    const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department"];
+    const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "alternateApproverIds"];
     const updates = {};
 
     allowedFields.forEach((field) => {
@@ -146,6 +146,24 @@ async function updateUserRole(req, res) {
     });
 
     if (!updates.name) throw new HttpError(400, "Name is required");
+    if (updates.alternateApproverIds !== undefined) {
+      if (!Array.isArray(updates.alternateApproverIds)) {
+        throw new HttpError(400, "Alternate approvers must be a list");
+      }
+      const targetUser = await User.findById(req.params.id).select("department");
+      if (!targetUser) throw new HttpError(404, "User not found");
+      const department = updates.department ?? targetUser.department;
+      const alternates = await User.find({
+        _id: { $in: updates.alternateApproverIds },
+        role: "admin",
+        isActive: true,
+        department,
+      }).select("_id");
+      if (alternates.length !== updates.alternateApproverIds.length) {
+        throw new HttpError(400, "Alternate approvers must be active admin users");
+      }
+      updates.alternateApproverIds = alternates.map((user) => user._id);
+    }
     if (updates.email) {
       updates.email = updates.email.toLowerCase();
       if (await User.exists({ email: updates.email, _id: { $ne: req.params.id } })) {
@@ -197,7 +215,7 @@ async function updateUserRole(req, res) {
 }
 
 async function listApprovers(req, res) {
-  const approvers = await listEligibleApprovers();
+  const approvers = await listEligibleApprovers(req.user.id);
   return res.json(approvers);
 }
 

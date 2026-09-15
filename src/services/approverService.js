@@ -1,11 +1,15 @@
 const User = require("../models/User");
 const HttpError = require("../utils/httpError");
 
-async function listEligibleApprovers() {
-  return User.find({
-    role: "admin",
-    isActive: true,
-  })
+async function listEligibleApprovers(userId) {
+  const user = userId ? await User.findById(userId).select("role managerId alternateApproverIds") : null;
+  const query = user?.role === "superadmin"
+    ? { role: "admin", isActive: true }
+    : user
+      ? { _id: { $in: [user.managerId, ...(user.alternateApproverIds || [])].filter(Boolean) }, role: "admin", isActive: true }
+      : { role: "admin", isActive: true };
+
+  return User.find(query)
     .select("-passwordHash")
     .sort({ name: 1 });
 }
@@ -20,6 +24,10 @@ async function resolveManagerApproverForUser(userId) {
     const manager = await User.findById(currentUser.managerId).select("-passwordHash");
     if (!manager || !manager.isActive) {
       return null;
+    }
+
+    async function listApproversForUser(userId) {
+      return listEligibleApprovers(userId);
     }
 
     if (manager.role === "admin") {
@@ -56,6 +64,7 @@ async function getEligibleApproverById(approverId, { excludeUserIds = [] } = {})
 
 module.exports = {
   listEligibleApprovers,
+  listApproversForUser,
   getEligibleApproverById,
   resolveManagerApproverForUser,
 };
