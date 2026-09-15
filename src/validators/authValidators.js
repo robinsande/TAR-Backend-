@@ -8,6 +8,15 @@ const loginValidator = [
     .withMessage("Password is required"),
 ];
 
+const registerValidator = [
+  body("name").isString().trim().isLength({ min: 1 }).withMessage("Name is required"),
+  body("email").isEmail().withMessage("A valid email is required").normalizeEmail(),
+  body("password")
+    .isString()
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters"),
+];
+
 const activateAccountValidator = [
   body("email").isEmail().withMessage("A valid email is required").normalizeEmail(),
   body("token").isString().notEmpty().withMessage("Activation token is required"),
@@ -31,6 +40,7 @@ const setPasswordValidator = [
 
 module.exports = {
   loginValidator,
+  registerValidator,
   activateAccountValidator,
   setPasswordValidator,
 };

@@ -1,9 +1,10 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const asyncHandler = require("../utils/asyncHandler");
-const { login, activateAccount, setPassword } = require("../controllers/authController");
+const { login, register, activateAccount, setPassword } = require("../controllers/authController");
 const {
   loginValidator,
+  registerValidator,
   activateAccountValidator,
   setPasswordValidator,
 } = require("../validators/authValidators");
@@ -23,6 +24,7 @@ const authLimiter = rateLimit({
 router.use(authLimiter);
 
 router.post("/login", ...loginValidator, validationErrorHandler, asyncHandler(login));
+router.post("/register", ...registerValidator, validationErrorHandler, asyncHandler(register));
 router.post(
   "/activate",
   ...activateAccountValidator,

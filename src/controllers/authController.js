@@ -38,18 +38,32 @@ async function login(req, res) {
     throw new HttpError(403, "This temporary password has expired. Contact a superadmin for a new account password.");
   }
 
-  if (user.mustSetPassword) {
-    throw new HttpError(
-      403,
-      "Please activate your account and set a password before logging in.",
-      { code: "ACCOUNT_NOT_ACTIVATED" }
-    );
-  }
-
   const passwordMatches = await bcrypt.compare(password, user.passwordHash);
 
   if (!passwordMatches) {
     throw new HttpError(401, "Invalid email or password");
+  }
+
+  async function register(req, res) {
+    const { name, email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
+
+    if (await User.exists({ email: normalizedEmail })) {
+      throw new HttpError(409, "A user with that email already exists");
+    }
+
+    const user = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      passwordHash: await hashPassword(password),
+      passwordExpiresAt: null,
+      role: "user",
+      isActive: true,
+      mustSetPassword: false,
+    });
+
+    const token = signToken({ userId: user._id.toString(), role: user.role });
+    return res.status(201).json({ token, user: buildAuthUserResponse(user) });
   }
 
   const token = signToken({
@@ -141,6 +155,7 @@ async function setPassword(req, res) {
 
 module.exports = {
   login,
+  register,
   activateAccount,
   setPassword,
 };
