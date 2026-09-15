@@ -28,10 +28,6 @@ async function resolveManagerApproverForUser(userId) {
       return null;
     }
 
-    async function listApproversForUser(userId) {
-      return listEligibleApprovers(userId);
-    }
-
     if (manager.role === "admin") {
       return manager;
     }
@@ -40,6 +36,10 @@ async function resolveManagerApproverForUser(userId) {
   }
 
   return null;
+}
+
+async function listApproversForUser(userId) {
+  return listEligibleApprovers(userId);
 }
 
 async function getEligibleApproverById(approverId, { excludeUserIds = [] } = {}) {

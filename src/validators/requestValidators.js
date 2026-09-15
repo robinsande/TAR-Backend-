@@ -1,5 +1,9 @@
 const { body } = require("express-validator");
 
+function isIsoDate(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(value) && !Number.isNaN(Date.parse(value));
+}
+
 const travelRequestBaseValidators = [
   body("selected_approver_id")
     .isMongoId()
@@ -34,12 +38,25 @@ const travelRequestBaseValidators = [
   body("itinerary.dateTo").isISO8601().withMessage("End date is required"),
   body("itinerary.destination").isString().notEmpty().withMessage("Destination is required"),
   body("itinerary.accommodationNeeded").optional().isBoolean(),
-  body("travelSegments").optional().isArray().withMessage("Travel segments must be a list"),
-  body("travelSegments.*.from").optional().isString().notEmpty(),
-  body("travelSegments.*.to").optional().isString().notEmpty(),
-  body("travelSegments.*.destination").optional().isString().notEmpty(),
-  body("travelSegments.*.dateFrom").optional().isISO8601(),
-  body("travelSegments.*.dateTo").optional().isISO8601(),
+  body("travelSegments")
+    .optional()
+    .isArray()
+    .withMessage("Travel segments must be a list")
+    .bail()
+    .custom((segments) => {
+      segments.forEach((segment) => {
+        if (!segment || !segment.from || !segment.to || !segment.destination || !segment.dateFrom || !segment.dateTo) {
+          throw new Error("Each additional destination requires From, To, Destination, Arrival, and Departure");
+        }
+        if (!isIsoDate(segment.dateFrom) || !isIsoDate(segment.dateTo)) {
+          throw new Error("Additional destination dates must be valid dates");
+        }
+        if (new Date(segment.dateTo) < new Date(segment.dateFrom)) {
+          throw new Error("Additional destination departure cannot be before arrival");
+        }
+      });
+      return true;
+    }),
   body("passengers")
     .isArray({ min: 1 })
     .withMessage("At least one passenger is required"),

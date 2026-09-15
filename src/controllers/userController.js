@@ -140,14 +140,7 @@ async function deleteUser(req, res) {
   return res.status(204).send();
 }
 
-async function updateUserRole(req, res) {
-  const { role } = req.body;
-
-  if (!["user", "admin", "superadmin"].includes(role)) {
-    throw new HttpError(400, "Role must be user, admin, or superadmin");
-  }
-
-  async function updateUserProfile(req, res) {
+async function updateUserProfile(req, res) {
     const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "alternateApproverIds"];
     const updates = {};
 
@@ -189,24 +182,31 @@ async function updateUserRole(req, res) {
     }).select("-passwordHash -inviteToken -inviteTokenExpires");
     if (!user) throw new HttpError(404, "User not found");
     return res.json(user);
-  }
+}
 
-  async function resetUserPassword(req, res) {
-    const user = await User.findById(req.params.id);
-    if (!user) throw new HttpError(404, "User not found");
+async function resetUserPassword(req, res) {
+  const user = await User.findById(req.params.id);
+  if (!user) throw new HttpError(404, "User not found");
 
-    const temporaryPassword = generateTemporaryPassword();
-    user.passwordHash = await hashPassword(temporaryPassword);
-    user.passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    user.mustSetPassword = false;
-    await user.save();
+  const temporaryPassword = generateTemporaryPassword();
+  user.passwordHash = await hashPassword(temporaryPassword);
+  user.passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  user.mustSetPassword = false;
+  await user.save();
 
-    return res.json({
-      id: user._id,
-      email: user.email,
-      passwordExpiresAt: user.passwordExpiresAt,
-      temporaryPassword,
-    });
+  return res.json({
+    id: user._id,
+    email: user.email,
+    passwordExpiresAt: user.passwordExpiresAt,
+    temporaryPassword,
+  });
+}
+
+async function updateUserRole(req, res) {
+  const { role } = req.body;
+
+  if (!["user", "admin", "superadmin"].includes(role)) {
+    throw new HttpError(400, "Role must be user, admin, or superadmin");
   }
 
   if (req.params.id === req.user.id) {

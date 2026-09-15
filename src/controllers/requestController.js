@@ -37,6 +37,7 @@ async function resolveApproverForRequest(approverId, requesterId, passengers, re
     );
   }
 
+  const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
   const expectedApprover = await resolveManagerApproverForUser(requesterId);
 
   if (requesterRole === "superadmin") {
@@ -57,8 +58,6 @@ async function resolveApproverForRequest(approverId, requesterId, passengers, re
     }
     throw new HttpError(400, "This user has no valid manager approver assigned");
   }
-
-  const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
 
   if (approverId && String(approverId) !== String(expectedApprover._id)) {
     const allowedAlternates = await listApproversForUser(requesterId);

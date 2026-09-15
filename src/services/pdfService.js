@@ -479,6 +479,36 @@ function buildTravelRequestPdf(res, requestDocument) {
         { width: 0.17, value: String(passengerNames.length || 0), align: "center" },
         { width: 0.30, value: itinerary.accommodationNeeded ? "Yes" : "No", align: "center" },
       ], height: 28 },
+      ...(requestDocument.travelSegments?.length
+        ? [
+            {
+              cells: [
+                { width: 1, value: "Additional Travel Destinations", bold: true, align: "center" },
+              ],
+              height: 22,
+            },
+            {
+              cells: [
+                { width: 0.18, value: "Arrival", bold: true, align: "center" },
+                { width: 0.18, value: "Departure", bold: true, align: "center" },
+                { width: 0.22, value: "From", bold: true, align: "center" },
+                { width: 0.22, value: "To", bold: true, align: "center" },
+                { width: 0.20, value: "Destination", bold: true, align: "center" },
+              ],
+              height: 22,
+            },
+          ]
+        : []),
+      ...(requestDocument.travelSegments || []).map((segment) => ({
+        cells: [
+          { width: 0.18, value: formatDate(segment.dateFrom), align: "center" },
+          { width: 0.18, value: formatDate(segment.dateTo), align: "center" },
+          { width: 0.22, value: segment.from, align: "center" },
+          { width: 0.22, value: segment.to, align: "center" },
+          { width: 0.20, value: segment.destination, align: "center" },
+        ],
+        height: 25,
+      })),
       { cells: [
         { width: 0.15, value: "Requested by:\n\nSignature:", bold: true },
         { width: 0.35, value: requestDocument.requesterSignature ? `${requester.name || ""}` : `${requester.name || ""}\nSignature: ________________________`, image: requestDocument.requesterSignature },
