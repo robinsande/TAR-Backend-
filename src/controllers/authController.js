@@ -34,6 +34,10 @@ async function login(req, res) {
     throw new HttpError(403, "This user account is inactive");
   }
 
+  if (user.passwordExpiresAt && user.passwordExpiresAt <= new Date()) {
+    throw new HttpError(403, "This temporary password has expired. Contact a superadmin for a new account password.");
+  }
+
   if (user.mustSetPassword) {
     throw new HttpError(
       403,
@@ -121,6 +125,7 @@ async function setPassword(req, res) {
   }
 
   user.passwordHash = await hashPassword(newPassword);
+  user.passwordExpiresAt = null;
   await user.save();
 
   const token = signToken({

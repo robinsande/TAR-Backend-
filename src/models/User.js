@@ -23,6 +23,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    passwordExpiresAt: {
+      type: Date,
+      default: null,
+    },
     position: {
       type: String,
       trim: true,

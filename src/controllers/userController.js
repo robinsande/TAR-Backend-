@@ -3,6 +3,11 @@ const { listEligibleApprovers } = require("../services/approverService");
 const { listEligiblePassengers } = require("../services/passengerService");
 const { hashPassword } = require("../services/passwordService");
 const HttpError = require("../utils/httpError");
+const crypto = require("crypto");
+
+function generateTemporaryPassword() {
+  return crypto.randomBytes(12).toString("base64url");
+}
 
 async function getMe(req, res) {
   return res.json(req.currentUser);
@@ -49,20 +54,15 @@ async function listUsers(req, res) {
 }
 
 async function createUser(req, res) {
-  const { employeeNumber, name, email, password, position, office, department } = req.body;
+  const { employeeNumber, name, email, position, office, department } = req.body;
   const requestedRole = req.body.role || "user";
 
-  if (!name || !email || !password) {
-    throw new HttpError(400, "Name, email, and password are required");
-  }
-
-  if (password.length < 8) {
-    throw new HttpError(400, "Password must be at least 8 characters");
-  }
-
   const role = req.user.role === "admin" ? "user" : requestedRole;
-  if (!["user", "admin"].includes(role)) {
-    throw new HttpError(400, "Role must be user or admin");
+  if (!["user", "admin", "superadmin"].includes(role)) {
+    throw new HttpError(400, "Role must be user, admin, or superadmin");
+  }
+  if (role === "superadmin" && req.user.role !== "superadmin") {
+    throw new HttpError(403, "Only a superadmin can create a superadmin account");
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -70,11 +70,14 @@ async function createUser(req, res) {
     throw new HttpError(409, "A user with that email already exists");
   }
 
+  const temporaryPassword = generateTemporaryPassword();
+  const passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   const user = await User.create({
     employeeNumber: employeeNumber || null,
     name: name.trim(),
     email: normalizedEmail,
-    passwordHash: await hashPassword(password),
+    passwordHash: await hashPassword(temporaryPassword),
+    passwordExpiresAt,
     position: position || null,
     office: office || null,
     department: department || null,
@@ -98,7 +101,31 @@ async function createUser(req, res) {
     managerId: user.managerId,
     isActive: user.isActive,
     mustSetPassword: user.mustSetPassword,
+    passwordExpiresAt: user.passwordExpiresAt,
+    temporaryPassword,
   });
+}
+
+async function updateUserStatus(req, res) {
+  if (req.params.id === req.user.id) {
+    throw new HttpError(400, "You cannot deactivate your own account");
+  }
+  const user = await User.findByIdAndUpdate(
+    req.params.id,
+    { $set: { isActive: req.body.isActive === true } },
+    { new: true, runValidators: true }
+  ).select("-passwordHash -inviteToken -inviteTokenExpires");
+  if (!user) throw new HttpError(404, "User not found");
+  return res.json(user);
+}
+
+async function deleteUser(req, res) {
+  if (req.params.id === req.user.id) {
+    throw new HttpError(400, "You cannot delete your own account");
+  }
+  const user = await User.findByIdAndDelete(req.params.id);
+  if (!user) throw new HttpError(404, "User not found");
+  return res.status(204).send();
 }
 
 async function updateUserRole(req, res) {
@@ -141,6 +168,8 @@ module.exports = {
   listUsers,
   createUser,
   updateUserRole,
+  updateUserStatus,
+  deleteUser,
   listApprovers,
   listPassengers,
 };
