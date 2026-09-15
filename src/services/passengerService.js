@@ -15,7 +15,7 @@ function idToString(value) {
 async function listEligiblePassengers() {
   return User.find({
     isActive: true,
-    role: { $in: ["user", "admin"] },
+    role: { $in: ["user", "admin", "superadmin"] },
   })
     .select(PASSENGER_SELECT)
     .sort({ name: 1 });
@@ -47,7 +47,7 @@ async function resolvePassengers(rawPassengers = []) {
   const users = await User.find({
     _id: { $in: orderedIds },
     isActive: true,
-    role: { $in: ["user", "admin"] },
+    role: { $in: ["user", "admin", "superadmin"] },
   }).select(PASSENGER_SELECT);
 
   const byId = new Map(users.map((user) => [user._id.toString(), user]));

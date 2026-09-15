@@ -34,7 +34,7 @@ router.get("/team", requireRole("admin"), asyncHandler(getTeamReimbursements));
 
 router.post(
   "/",
-  requireRole("user", "admin"),
+  requireRole("user", "admin", "superadmin"),
   ...createReimbursementValidator,
   validationErrorHandler,
   asyncHandler(createReimbursement)
@@ -42,7 +42,7 @@ router.post(
 
 router.patch(
   "/:id",
-  requireRole("user", "admin"),
+  requireRole("user", "admin", "superadmin"),
   ...updateReimbursementValidator,
   validationErrorHandler,
   asyncHandler(updateReimbursement)

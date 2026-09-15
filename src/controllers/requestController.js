@@ -27,7 +27,7 @@ const {
   applyRequestResubmission,
 } = require("../services/travelRequestService");
 
-async function resolveApproverForRequest(approverId, requesterId, passengers) {
+async function resolveApproverForRequest(approverId, requesterId, passengers, requesterRole) {
   const requesterIdString = String(requesterId);
 
   if (approverId && String(approverId) === requesterIdString) {
@@ -38,6 +38,15 @@ async function resolveApproverForRequest(approverId, requesterId, passengers) {
   }
 
   const expectedApprover = await resolveManagerApproverForUser(requesterId);
+
+  if (requesterRole === "superadmin") {
+    if (!approverId) {
+      throw new HttpError(400, "Select an admin approver for this request");
+    }
+    return getEligibleApproverById(approverId, {
+      excludeUserIds: [requesterId, ...getPassengerUserIds({ passengers })],
+    });
+  }
 
   if (!expectedApprover) {
     throw new HttpError(400, "This user has no valid manager approver assigned");
@@ -63,7 +72,8 @@ async function createRequest(req, res) {
   const approver = await resolveApproverForRequest(
     req.body.selected_approver_id,
     requester._id,
-    passengers
+    passengers,
+    requester.role
   );
 
   const requestDocument = await TravelRequest.create({
@@ -220,7 +230,8 @@ async function resubmitRequest(req, res) {
   const approver = await resolveApproverForRequest(
     req.body.selected_approver_id,
     req.user.id,
-    passengers
+    passengers,
+    req.user.role
   );
 
   requestDocument.history.push({

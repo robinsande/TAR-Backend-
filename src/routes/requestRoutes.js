@@ -31,7 +31,7 @@ router.get(
 
 router.post(
   "/",
-  requireRole("user", "admin"),
+  requireRole("user", "admin", "superadmin"),
   createTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(createRequest)
@@ -58,7 +58,7 @@ router.patch(
 
 router.patch(
   "/:id",
-  requireRole("user", "admin"),
+  requireRole("user", "admin", "superadmin"),
   resubmitTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(resubmitRequest)
