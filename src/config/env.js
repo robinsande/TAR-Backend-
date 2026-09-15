@@ -49,6 +49,10 @@ if (nodeEnv === "production" && (!process.env.JWT_SECRET || jwtSecret === "devel
   throw new Error("JWT_SECRET must be set to a strong value in production");
 }
 
+if (nodeEnv === "production" && !process.env.MONGODB_URI) {
+  throw new Error("MONGODB_URI must be set in production; refusing to use localhost MongoDB");
+}
+
 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5500";
 
 const env = {
