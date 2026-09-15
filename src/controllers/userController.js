@@ -9,7 +9,7 @@ async function getMe(req, res) {
 }
 
 async function updateMe(req, res) {
-  const allowedFields = ["name", "employeeNumber", "position", "office", "department"];
+  const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department"];
   const updates = {};
 
   allowedFields.forEach((field) => {
@@ -20,6 +20,17 @@ async function updateMe(req, res) {
 
   if (!updates.name) {
     throw new HttpError(400, "Name is required");
+  }
+
+  if (updates.email) {
+    updates.email = updates.email.toLowerCase();
+    const existingUser = await User.findOne({
+      email: updates.email,
+      _id: { $ne: req.user.id },
+    });
+    if (existingUser) {
+      throw new HttpError(409, "A user with that email already exists");
+    }
   }
 
   const user = await User.findByIdAndUpdate(req.user.id, { $set: updates }, {
