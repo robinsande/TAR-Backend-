@@ -135,6 +135,50 @@ async function updateUserRole(req, res) {
     throw new HttpError(400, "Role must be user, admin, or superadmin");
   }
 
+  async function updateUserProfile(req, res) {
+    const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department"];
+    const updates = {};
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field];
+      }
+    });
+
+    if (!updates.name) throw new HttpError(400, "Name is required");
+    if (updates.email) {
+      updates.email = updates.email.toLowerCase();
+      if (await User.exists({ email: updates.email, _id: { $ne: req.params.id } })) {
+        throw new HttpError(409, "A user with that email already exists");
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(req.params.id, { $set: updates }, {
+      new: true,
+      runValidators: true,
+    }).select("-passwordHash -inviteToken -inviteTokenExpires");
+    if (!user) throw new HttpError(404, "User not found");
+    return res.json(user);
+  }
+
+  async function resetUserPassword(req, res) {
+    const user = await User.findById(req.params.id);
+    if (!user) throw new HttpError(404, "User not found");
+
+    const temporaryPassword = generateTemporaryPassword();
+    user.passwordHash = await hashPassword(temporaryPassword);
+    user.passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    user.mustSetPassword = false;
+    await user.save();
+
+    return res.json({
+      id: user._id,
+      email: user.email,
+      passwordExpiresAt: user.passwordExpiresAt,
+      temporaryPassword,
+    });
+  }
+
   if (req.params.id === req.user.id) {
     throw new HttpError(400, "You cannot change your own role");
   }
@@ -168,6 +212,8 @@ module.exports = {
   listUsers,
   createUser,
   updateUserRole,
+  updateUserProfile,
+  resetUserPassword,
   updateUserStatus,
   deleteUser,
   listApprovers,
