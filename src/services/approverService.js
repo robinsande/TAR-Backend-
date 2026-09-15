@@ -2,11 +2,13 @@ const User = require("../models/User");
 const HttpError = require("../utils/httpError");
 
 async function listEligibleApprovers(userId) {
-  const user = userId ? await User.findById(userId).select("role managerId alternateApproverIds") : null;
+  const user = userId ? await User.findById(userId).select("role managerId managerEmail alternateApproverIds alternateManagers") : null;
+  const contactEmails = user ? [user.managerEmail, ...(user.alternateManagers || []).map((contact) => contact.email)].filter(Boolean) : [];
+  const linkedIds = user ? [user.managerId, ...(user.alternateApproverIds || [])].filter(Boolean) : [];
   const query = user?.role === "superadmin"
     ? { role: "admin", isActive: true }
     : user
-      ? { _id: { $in: [user.managerId, ...(user.alternateApproverIds || [])].filter(Boolean) }, role: "admin", isActive: true }
+      ? { $or: [{ _id: { $in: linkedIds } }, { email: { $in: contactEmails } }], role: "admin", isActive: true }
       : { role: "admin", isActive: true };
 
   return User.find(query)

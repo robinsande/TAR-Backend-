@@ -14,7 +14,7 @@ async function getMe(req, res) {
 }
 
 async function updateMe(req, res) {
-  const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department"];
+  const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "managerName", "managerEmail", "alternateManagers"];
   const updates = {};
 
   allowedFields.forEach((field) => {
@@ -25,6 +25,18 @@ async function updateMe(req, res) {
 
   if (!updates.name) {
     throw new HttpError(400, "Name is required");
+  }
+  if (updates.managerEmail) updates.managerEmail = updates.managerEmail.toLowerCase();
+  if (updates.alternateManagers !== undefined) {
+    if (!Array.isArray(updates.alternateManagers) || updates.alternateManagers.length > 3) {
+      throw new HttpError(400, "Provide up to three alternate approvers");
+    }
+    updates.alternateManagers = updates.alternateManagers
+      .filter((contact) => contact && (contact.name || contact.email))
+      .map((contact) => ({ name: String(contact.name || "").trim(), email: String(contact.email || "").trim().toLowerCase() }));
+    if (updates.alternateManagers.some((contact) => !contact.name || !contact.email)) {
+      throw new HttpError(400, "Each alternate approver needs a name and email");
+    }
   }
 
   if (updates.email) {

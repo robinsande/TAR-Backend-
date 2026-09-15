@@ -58,6 +58,15 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       default: null,
     },
+    managerName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    alternateManagers: [{
+      name: { type: String, trim: true },
+      email: { type: String, lowercase: true, trim: true },
+    }],
     alternateApproverIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

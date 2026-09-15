@@ -6,7 +6,7 @@ const {
   notifyTravelRequestPassengers,
 } = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
-const { getEligibleApproverById, resolveManagerApproverForUser } = require("../services/approverService");
+const { getEligibleApproverById, resolveManagerApproverForUser, listApproversForUser } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const {
@@ -49,13 +49,23 @@ async function resolveApproverForRequest(approverId, requesterId, passengers, re
   }
 
   if (!expectedApprover) {
+    if (approverId) {
+      const allowedApprovers = await listApproversForUser(requesterId);
+      if (allowedApprovers.some((approver) => String(approver._id) === String(approverId))) {
+        return getEligibleApproverById(approverId, { excludeUserIds });
+      }
+    }
     throw new HttpError(400, "This user has no valid manager approver assigned");
   }
 
   const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
 
   if (approverId && String(approverId) !== String(expectedApprover._id)) {
-    return getEligibleApproverById(expectedApprover._id, { excludeUserIds });
+    const allowedAlternates = await listApproversForUser(requesterId);
+    if (!allowedAlternates.some((approver) => String(approver._id) === String(approverId))) {
+      throw new HttpError(400, "Selected approver is not assigned to this user");
+    }
+    return getEligibleApproverById(approverId, { excludeUserIds });
   }
 
   return getEligibleApproverById(approverId || expectedApprover._id, { excludeUserIds });
