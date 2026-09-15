@@ -10,6 +10,10 @@ const {
 } = require("./middleware/errorHandler");
 
 function createCorsMiddleware() {
+  if (env.nodeEnv === "production") {
+    return cors({ origin: true });
+  }
+
   return cors({
     origin(origin, callback) {
       if (
