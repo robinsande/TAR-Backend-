@@ -53,7 +53,14 @@ if (nodeEnv === "production" && !process.env.MONGODB_URI) {
   throw new Error("MONGODB_URI must be set in production; refusing to use localhost MongoDB");
 }
 
-const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5500";
+const isRenderDeployment =
+  process.env.RENDER === "true" || Boolean(process.env.RENDER_SERVICE_ID);
+const configuredFrontendUrl = process.env.FRONTEND_URL || "";
+const frontendUrl =
+  isRenderDeployment &&
+  (!configuredFrontendUrl || configuredFrontendUrl.includes("localhost"))
+    ? "https://travel-request.onrender.com"
+    : configuredFrontendUrl || "http://localhost:5500";
 
 const env = {
   nodeEnv,
