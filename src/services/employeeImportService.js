@@ -7,7 +7,11 @@ const {
 const { sendActivationEmail } = require("./emailService");
 
 function getCellValue(row, key) {
-  const value = row[key];
+  const requestedKey = String(key).trim().toLowerCase();
+  const actualKey = Object.keys(row).find(
+    (rowKey) => String(rowKey).trim().toLowerCase() === requestedKey
+  );
+  const value = actualKey === undefined ? undefined : row[actualKey];
   return typeof value === "string" ? value.trim() : value;
 }
 
@@ -19,7 +23,7 @@ function normalizeName(value) {
 }
 
 function getStaffName(row) {
-  const staffName = getCellValue(row, "Staff Name ");
+  const staffName = getCellValue(row, "Staff Name");
   if (staffName) {
     return String(staffName).trim().replace(/\s+/g, " ");
   }
@@ -27,6 +31,13 @@ function getStaffName(row) {
   const firstName = getCellValue(row, "First Name") || "";
   const lastName = getCellValue(row, "Last Name") || "";
   return `${firstName} ${lastName}`.trim().replace(/\s+/g, " ");
+}
+
+function isEmployeeRow(row) {
+  const name = getStaffName(row);
+  const position = getCellValue(row, "Job Title") || getCellValue(row, "Designation");
+  const department = getCellValue(row, "Department") || getCellValue(row, "Projects/Department");
+  return Boolean(name && (position || department));
 }
 
 function getManagerName(row) {
@@ -97,13 +108,15 @@ function rowsFromWorkbookFile(filePath) {
 }
 
 async function importEmployeeRows(rows, { sendInvites = true } = {}) {
-  if (!rows.length) {
+  const employeeRows = rows.filter(isEmployeeRow);
+
+  if (!employeeRows.length) {
     throw new Error("No employee rows found in the provided spreadsheet.");
   }
 
-  const managerEmails = deriveManagerEmails(rows);
+  const managerEmails = deriveManagerEmails(employeeRows);
   const managerNames = new Set(
-    rows.map((row) => normalizeName(getManagerName(row))).filter(Boolean)
+    employeeRows.map((row) => normalizeName(getManagerName(row))).filter(Boolean)
   );
   const existingUsers = await User.find({}).select("_id name email role passwordHash mustSetPassword");
   const usersByName = new Map(existingUsers.map((user) => [normalizeName(user.name), user]));
@@ -115,7 +128,7 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
     errors: [],
   };
 
-  for (const row of rows) {
+  for (const row of employeeRows) {
     const payload = buildUserPayload(row);
     const matchedUser = usersByName.get(normalizeName(payload.name));
 
@@ -125,6 +138,12 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
 
     if (!payload.email || !payload.name) {
       summary.skipped += 1;
+      if (payload.name && !payload.email) {
+        summary.errors.push({
+          name: payload.name,
+          message: "Missing CARE email address; add an email column before importing this new employee.",
+        });
+      }
       continue;
     }
 
@@ -207,7 +226,7 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
     }
   }
 
-  for (const row of rows) {
+  for (const row of employeeRows) {
     const payload = buildUserPayload(row);
     const matchedUser = usersByName.get(normalizeName(payload.name));
     const email = String(payload.email || matchedUser?.email || "").toLowerCase();
@@ -247,7 +266,7 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
     await user.save();
   }
 
-  for (const row of rows) {
+  for (const row of employeeRows) {
     const payload = buildUserPayload(row);
     const matchedUser = usersByName.get(normalizeName(payload.name));
     const email = String(payload.email || matchedUser?.email || "").toLowerCase();
