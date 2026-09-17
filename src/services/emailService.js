@@ -82,6 +82,7 @@ async function sendEmail(to, subject, html) {
     return true;
   } catch (error) {
     console.error("Email failed:", error.message);
+      console.error(`Email failed for ${to || "unknown recipient"}:`, error.message);
     return false;
   }
 }

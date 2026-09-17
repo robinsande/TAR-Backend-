@@ -221,17 +221,29 @@ async function sendBulkInvitations(req, res) {
     throw new HttpError(400, "Select at least one active user to invite.");
   }
 
+    function isValidEmail(email) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+    }
+
+    const invalidUsers = users.filter((user) => !isValidEmail(user.email));
+    const validUsers = users.filter((user) => isValidEmail(user.email));
+    const invalidErrors = invalidUsers.map((user) => ({
+      name: user.name,
+      email: user.email || null,
+      message: "Invalid or missing email address; update this user before sending an invitation.",
+    }));
+
   const results = await Promise.allSettled(users.map(async (user) => {
     const temporaryPassword = generateTemporaryPassword();
     const passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    user.passwordHash = await hashPassword(temporaryPassword);
-    user.passwordExpiresAt = passwordExpiresAt;
-    user.mustSetPassword = true;
-    user.inviteToken = null;
-    user.inviteTokenExpires = null;
-    await user.save();
     const sent = await sendTemporaryPasswordEmail(user, temporaryPassword, passwordExpiresAt);
     if (!sent) throw new Error(`Invitation email failed for ${user.email}`);
+      user.passwordHash = await hashPassword(temporaryPassword);
+      user.passwordExpiresAt = passwordExpiresAt;
+      user.mustSetPassword = true;
+      user.inviteToken = null;
+      user.inviteTokenExpires = null;
+      await user.save();
     return user.email;
   }));
 
@@ -240,7 +252,7 @@ async function sendBulkInvitations(req, res) {
     .filter((result) => result.status === "rejected")
     .map((result) => ({ message: result.reason?.message || "Invitation failed" }));
 
-  return res.json({ invited: sent.length, requested: users.length, emails: sent, errors });
+    return res.json({ invited: sent.length, requested: users.length, emails: sent, errors: [...invalidErrors, ...errors] });
 }
 
 async function updateUserRole(req, res) {
