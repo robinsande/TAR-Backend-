@@ -69,6 +69,24 @@ describe("employee import helpers", () => {
     });
   });
 
+  it("maps the accurate staff roster format without changing the workbook name", () => {
+    const payload = buildUserPayload({
+      __EMPTY: 1,
+      "Staff Name ": "Phoebe Achieng Otiende",
+      Designation: "Executive Assistant",
+      "Projects/Department": "Executive",
+      "Line Manager": "Getrude Misango",
+    });
+
+    expect(payload).toEqual({
+      employeeNumber: "1",
+      name: "Phoebe Achieng Otiende",
+      position: "Executive Assistant",
+      department: "Executive",
+      managerName: "Getrude Misango",
+    });
+  });
+
   it("derives admin candidates from manager email references", () => {
     const managerEmails = deriveManagerEmails([
       { "Manager's CARE email address": "manager@example.com" },
@@ -176,5 +194,50 @@ describe("employee import integration", () => {
     expect(superAdmin.role).toBe("superadmin");
     expect(superAdmin.mustSetPassword).toBe(false);
     expect(managerAfter.mustSetPassword).toBe(false);
+  });
+
+  it("sets the designated manager's manager as an alternate approver", async () => {
+    const filePath = createWorkbookFile([
+      {
+        __EMPTY: 1,
+        "Staff Name ": "Director",
+        Designation: "Director",
+        "Projects/Department": "Executive",
+        "Line Manager": "",
+      },
+      {
+        __EMPTY: 2,
+        "Staff Name ": "Manager",
+        Designation: "Manager",
+        "Projects/Department": "Programs",
+        "Line Manager": "Director",
+      },
+      {
+        __EMPTY: 3,
+        "Staff Name ": "Staff Member",
+        Designation: "Officer",
+        "Projects/Department": "Programs",
+        "Line Manager": "Manager",
+      },
+    ]);
+
+    await User.create([
+      { name: "Director", email: "director@example.com", role: "admin" },
+      { name: "Manager", email: "manager@example.com", role: "admin" },
+      { name: "Staff Member", email: "staff@example.com", role: "user" },
+    ]);
+
+    try {
+      await importEmployeesFromFile(filePath, { sendInvites: false });
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+
+    const staff = await User.findOne({ email: "staff@example.com" });
+    expect(staff.managerName).toBe("Manager");
+    expect(staff.alternateManagers.map((manager) => manager.toObject())).toEqual([
+      { _id: expect.anything(), name: "Director", email: "director@example.com" },
+    ]);
+    expect(staff.alternateApproverIds).toHaveLength(1);
   });
 });

@@ -11,20 +11,57 @@ function getCellValue(row, key) {
   return typeof value === "string" ? value.trim() : value;
 }
 
-function buildUserPayload(row) {
+function normalizeName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function getStaffName(row) {
+  const staffName = getCellValue(row, "Staff Name ");
+  if (staffName) {
+    return String(staffName).trim().replace(/\s+/g, " ");
+  }
+
   const firstName = getCellValue(row, "First Name") || "";
   const lastName = getCellValue(row, "Last Name") || "";
+  return `${firstName} ${lastName}`.trim().replace(/\s+/g, " ");
+}
+
+function getManagerName(row) {
+  return String(getCellValue(row, "Line Manager") || "").trim().replace(/\s+/g, " ");
+}
+
+function buildUserPayload(row) {
+  const name = getStaffName(row);
   const email = String(getCellValue(row, "CARE Email Address") || "").toLowerCase();
 
-  return {
-    employeeNumber: getCellValue(row, "No.") ? String(getCellValue(row, "No.")) : null,
-    name: `${firstName} ${lastName}`.trim(),
-    email,
-    position: getCellValue(row, "Job Title") || null,
-    department: getCellValue(row, "Department") || null,
-    managerEmail:
-      String(getCellValue(row, "Manager's CARE email address") || "").toLowerCase() || null,
+  const payload = {
+    employeeNumber: getCellValue(row, "No.") || getCellValue(row, "__EMPTY")
+      ? String(getCellValue(row, "No.") || getCellValue(row, "__EMPTY"))
+      : null,
+    name,
+    position: getCellValue(row, "Job Title") || getCellValue(row, "Designation") || null,
+    department: getCellValue(row, "Department") || getCellValue(row, "Projects/Department") || null,
   };
+
+  if (email) {
+    payload.email = email;
+  }
+
+  const managerEmail = String(
+    getCellValue(row, "Manager's CARE email address") || ""
+  ).toLowerCase();
+  if (managerEmail) {
+    payload.managerEmail = managerEmail;
+  }
+  const managerName = getManagerName(row);
+  if (managerName) {
+    payload.managerName = managerName;
+  }
+
+  return payload;
 }
 
 function deriveManagerEmails(rows) {
@@ -65,6 +102,11 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
   }
 
   const managerEmails = deriveManagerEmails(rows);
+  const managerNames = new Set(
+    rows.map((row) => normalizeName(getManagerName(row))).filter(Boolean)
+  );
+  const existingUsers = await User.find({}).select("_id name email role passwordHash mustSetPassword");
+  const usersByName = new Map(existingUsers.map((user) => [normalizeName(user.name), user]));
   const summary = {
     created: 0,
     updated: 0,
@@ -75,6 +117,11 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
 
   for (const row of rows) {
     const payload = buildUserPayload(row);
+    const matchedUser = usersByName.get(normalizeName(payload.name));
+
+    if (!payload.email && matchedUser) {
+      payload.email = matchedUser.email;
+    }
 
     if (!payload.email || !payload.name) {
       summary.skipped += 1;
@@ -89,7 +136,15 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
       if (!existingUser) {
         await User.create({
           ...payload,
-          role: deriveRoleForEmail(payload.email, managerEmails),
+          role: deriveRoleForEmail(
+            payload.email,
+            managerEmails,
+            matchedUser?.role === "superadmin"
+              ? "superadmin"
+              : managerNames.has(normalizeName(payload.name))
+                ? "admin"
+                : matchedUser?.role
+          ),
           isActive: true,
           mustSetPassword: true,
           passwordHash: null,
@@ -115,6 +170,7 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
         position: payload.position,
         department: payload.department,
         managerEmail: payload.managerEmail,
+        managerName: payload.managerName,
         isActive: true,
       };
 
@@ -122,7 +178,11 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
         profileUpdate.role = deriveRoleForEmail(
           payload.email,
           managerEmails,
-          existingUser.role
+          existingUser.role === "superadmin"
+            ? "superadmin"
+            : managerNames.has(normalizeName(payload.name))
+              ? "admin"
+              : existingUser.role
         );
       }
 
@@ -148,10 +208,13 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
   }
 
   for (const row of rows) {
-    const email = String(getCellValue(row, "CARE Email Address") || "").toLowerCase();
+    const payload = buildUserPayload(row);
+    const matchedUser = usersByName.get(normalizeName(payload.name));
+    const email = String(payload.email || matchedUser?.email || "").toLowerCase();
     const managerEmail = String(
       getCellValue(row, "Manager's CARE email address") || ""
     ).toLowerCase();
+    const managerName = getManagerName(row);
 
     if (!email) {
       continue;
@@ -163,14 +226,46 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
       continue;
     }
 
-    if (!managerEmail) {
+    const manager = managerEmail
+      ? await User.findOne({ email: managerEmail })
+      : usersByName.get(normalizeName(managerName));
+
+    if (!manager) {
       user.managerId = null;
+      user.managerEmail = managerEmail || null;
+      user.managerName = managerName || null;
+      user.alternateManagers = [];
+      user.alternateApproverIds = [];
       await user.save();
       continue;
     }
 
-    const manager = await User.findOne({ email: managerEmail });
-    user.managerId = manager ? manager._id : null;
+    user.managerId = manager._id;
+    user.managerEmail = manager.email;
+    user.managerName = manager.name;
+
+    await user.save();
+  }
+
+  for (const row of rows) {
+    const payload = buildUserPayload(row);
+    const matchedUser = usersByName.get(normalizeName(payload.name));
+    const email = String(payload.email || matchedUser?.email || "").toLowerCase();
+    const user = email ? await User.findOne({ email }) : null;
+
+    if (!user || !user.managerId) {
+      continue;
+    }
+
+    const manager = await User.findById(user.managerId).select("managerId");
+    const alternateManager = manager?.managerId
+      ? await User.findById(manager.managerId).select("_id name email")
+      : null;
+
+    user.alternateManagers = alternateManager
+      ? [{ name: alternateManager.name, email: alternateManager.email }]
+      : [];
+    user.alternateApproverIds = alternateManager ? [alternateManager._id] : [];
     await user.save();
   }
 
@@ -191,6 +286,7 @@ module.exports = {
   buildUserPayload,
   deriveManagerEmails,
   deriveRoleForEmail,
+  normalizeName,
   importEmployeeRows,
   importEmployeesFromFile,
   importEmployeesFromBuffer,
