@@ -13,6 +13,7 @@ const {
   createRequest,
   listRequests,
   getRequestById,
+  remindApprover,
   approveRequest,
   rejectRequest,
   resubmitRequest,
@@ -39,6 +40,12 @@ router.post(
 
 router.get("/", scopeRequestQuery, asyncHandler(listRequests));
 router.get("/:id", asyncHandler(getRequestById));
+
+router.post(
+  "/:id/remind-approver",
+  requireRole("user", "admin", "superadmin"),
+  asyncHandler(remindApprover)
+);
 
 router.patch(
   "/:id/approve",

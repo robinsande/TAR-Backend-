@@ -11,6 +11,7 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       enum: [
         "new_request",
+        "approval_reminder",
         "passenger_added",
         "approved",
         "rejected",

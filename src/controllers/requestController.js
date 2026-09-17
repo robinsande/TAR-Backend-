@@ -127,6 +127,34 @@ async function listRequests(req, res) {
   return res.json(buildPaginatedResponse(requests, total, pagination));
 }
 
+async function remindApprover(req, res) {
+  const requestDocument = await TravelRequest.findById(req.params.id)
+    .populate("requestedBy", "name email")
+    .populate("selected_approver_id", "name email role isActive");
+
+  if (!requestDocument) {
+    throw new HttpError(404, "Travel request not found");
+  }
+
+  if (String(requestDocument.requestedBy?._id) !== String(req.user.id)) {
+    throw new HttpError(403, "Only the requester can remind the approver");
+  }
+
+  if (requestDocument.status !== "pending") {
+    throw new HttpError(400, "Only pending requests can be reminded");
+  }
+
+  await notifyTravelRequestUser(
+    requestDocument.selected_approver_id,
+    "approval_reminder",
+    requestDocument,
+    "approver",
+    requestDocument.requestedBy
+  );
+
+  return res.json({ message: "Reminder sent to the assigned approver" });
+}
+
 async function getRequestById(req, res) {
   const requestDocument = await populateTravelRequestById(req.params.id);
 
@@ -334,6 +362,7 @@ function downloadTravelRequestTemplatePdf(req, res) {
 module.exports = {
   createRequest,
   listRequests,
+  remindApprover,
   getRequestById,
   approveRequest,
   rejectRequest,

@@ -77,6 +77,11 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
   }
 
   switch (type) {
+    case "approval_reminder":
+      return {
+        subject: "Reminder: travel request awaiting your approval",
+        message: `${requesterLabel} is reminding you to review and approve the TAR for ${destination} for ${purpose}.`,
+      };
     case "new_request":
       return {
         subject: "New travel request awaiting approval",
