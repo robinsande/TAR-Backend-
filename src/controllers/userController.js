@@ -61,6 +61,8 @@ async function updateMe(req, res) {
 
 async function listUsers(req, res) {
   const users = await User.find()
+    .populate("managerId", "name email role isActive")
+    .populate("alternateApproverIds", "name email role isActive department")
     .select("-passwordHash -inviteToken -inviteTokenExpires")
     .sort({ name: 1 });
   return res.json(users);
@@ -142,7 +144,7 @@ async function deleteUser(req, res) {
 }
 
 async function updateUserProfile(req, res) {
-    const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "alternateApproverIds"];
+  const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "managerId", "alternateApproverIds"];
     const updates = {};
 
     allowedFields.forEach((field) => {
@@ -152,20 +154,30 @@ async function updateUserProfile(req, res) {
     });
 
     if (!updates.name) throw new HttpError(400, "Name is required");
+    if (updates.managerId !== undefined) {
+      if (updates.managerId && String(updates.managerId) === String(req.params.id)) {
+        throw new HttpError(400, "A user cannot be their own line manager");
+      }
+      const manager = updates.managerId
+        ? await User.findOne({ _id: updates.managerId, role: "admin", isActive: true }).select("_id name email")
+        : null;
+      if (updates.managerId && !manager) {
+        throw new HttpError(400, "Line manager must be an active admin user");
+      }
+      updates.managerName = manager?.name || null;
+      updates.managerEmail = manager?.email || null;
+    }
     if (updates.alternateApproverIds !== undefined) {
       if (!Array.isArray(updates.alternateApproverIds)) {
         throw new HttpError(400, "Alternate approvers must be a list");
       }
-      const targetUser = await User.findById(req.params.id).select("department");
-      if (!targetUser) throw new HttpError(404, "User not found");
-      const department = updates.department ?? targetUser.department;
       const alternates = await User.find({
         _id: { $in: updates.alternateApproverIds },
         role: "admin",
         isActive: true,
-        department,
       }).select("_id");
-      if (alternates.length !== updates.alternateApproverIds.length) {
+      const uniqueIds = new Set(updates.alternateApproverIds.map((id) => String(id)));
+      if (uniqueIds.size !== updates.alternateApproverIds.length || uniqueIds.has(String(req.params.id)) || alternates.length !== updates.alternateApproverIds.length) {
         throw new HttpError(400, "Alternate approvers must be active admin users");
       }
       updates.alternateApproverIds = alternates.map((user) => user._id);
@@ -180,7 +192,10 @@ async function updateUserProfile(req, res) {
     const user = await User.findByIdAndUpdate(req.params.id, { $set: updates }, {
       new: true,
       runValidators: true,
-    }).select("-passwordHash -inviteToken -inviteTokenExpires");
+    })
+      .populate("managerId", "name email role isActive")
+      .populate("alternateApproverIds", "name email role isActive department")
+      .select("-passwordHash -inviteToken -inviteTokenExpires");
     if (!user) throw new HttpError(404, "User not found");
     return res.json(user);
 }
