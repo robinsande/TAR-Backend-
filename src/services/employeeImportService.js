@@ -44,9 +44,18 @@ function getManagerName(row) {
   return String(getCellValue(row, "Line Manager") || "").trim().replace(/\s+/g, " ");
 }
 
+function getEmployeeEmail(row) {
+  return String(
+    getCellValue(row, "CARE Email Address") ||
+    getCellValue(row, "Email Address") ||
+    getCellValue(row, "Email") ||
+    ""
+  ).trim().toLowerCase();
+}
+
 function buildUserPayload(row) {
   const name = getStaffName(row);
-  const email = String(getCellValue(row, "CARE Email Address") || "").toLowerCase();
+  const email = getEmployeeEmail(row);
 
   const payload = {
     employeeNumber: getCellValue(row, "No.") || getCellValue(row, "__EMPTY")
