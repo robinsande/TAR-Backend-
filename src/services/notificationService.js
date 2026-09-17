@@ -36,9 +36,14 @@ async function createAndSendNotification({
   return notification;
 }
 
-function buildTravelRequestNotificationContent(type, requestDocument, audience = "approver") {
+function buildTravelRequestNotificationContent(type, requestDocument, audience = "approver", requester = null) {
   const destination = requestDocument.itinerary.destination;
   const purpose = requestDocument.purposeOfTrip;
+  const requesterLabel = requester?.email
+    ? `${requester.name || "A staff member"} (${requester.email})`
+    : requestDocument.requestedBy?.email
+      ? `${requestDocument.requestedBy.name || "A staff member"} (${requestDocument.requestedBy.email})`
+      : "A staff member";
 
   if (audience === "passenger") {
     switch (type) {
@@ -74,7 +79,7 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
     case "new_request":
       return {
         subject: "New travel request awaiting approval",
-        message: `A new travel request to ${destination} for ${purpose} is awaiting your approval.`,
+          message: `${requesterLabel} submitted a new travel request to ${destination} for ${purpose}. Please review and approve the TAR.`,
       };
     case "approved":
       return {
@@ -89,7 +94,7 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
     case "resubmitted":
       return {
         subject: "Travel request resubmitted",
-        message: `A travel request to ${destination} for ${purpose} was edited and resubmitted for your review.`,
+          message: `${requesterLabel} edited and resubmitted a travel request to ${destination} for ${purpose}. Please review and approve the TAR.`,
       };
     default:
       return {
@@ -132,12 +137,12 @@ function buildReimbursementNotificationContent(type, report) {
   }
 }
 
-async function notifyTravelRequestUser(recipient, type, requestDocument, audience = "approver") {
+async function notifyTravelRequestUser(recipient, type, requestDocument, audience = "approver", requester = null) {
   if (!recipient) {
     return null;
   }
 
-  const content = buildTravelRequestNotificationContent(type, requestDocument, audience);
+  const content = buildTravelRequestNotificationContent(type, requestDocument, audience, requester);
 
   return createAndSendNotification({
     recipient,

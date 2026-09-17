@@ -108,7 +108,7 @@ async function createRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
-  await notifyTravelRequestUser(approver, "new_request", requestDocument);
+  await notifyTravelRequestUser(approver, "new_request", requestDocument, "approver", requester);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -263,7 +263,7 @@ async function resubmitRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "resubmitted");
-  await notifyTravelRequestUser(approver, "resubmitted", requestDocument);
+  await notifyTravelRequestUser(approver, "resubmitted", requestDocument, "approver", requestDocument.requestedBy);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
