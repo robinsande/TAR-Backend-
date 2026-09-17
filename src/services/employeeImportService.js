@@ -127,8 +127,10 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
   const managerNames = new Set(
     employeeRows.map((row) => normalizeName(getManagerName(row))).filter(Boolean)
   );
-  const existingUsers = await User.find({}).select("_id name email role passwordHash mustSetPassword");
+  const existingUsers = await User.find({}).select("_id name email role passwordHash mustSetPassword managerId");
   const usersByName = new Map(existingUsers.map((user) => [normalizeName(user.name), user]));
+  const usersByEmail = new Map(existingUsers.map((user) => [user.email.toLowerCase(), user]));
+  const usersById = new Map(existingUsers.map((user) => [String(user._id), user]));
   const summary = {
     created: 0,
     updated: 0,
@@ -136,6 +138,7 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
     invitesSent: 0,
     errors: [],
   };
+  const inviteTasks = [];
 
   for (const row of employeeRows) {
     const payload = buildUserPayload(row);
@@ -157,12 +160,12 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
     }
 
     try {
-      const existingUser = await User.findOne({ email: payload.email });
+      const existingUser = usersByEmail.get(payload.email);
       const inviteToken = generateInviteToken();
       const inviteTokenExpires = getInviteTokenExpiry();
 
       if (!existingUser) {
-        await User.create({
+        const createdUser = await User.create({
           ...payload,
           role: deriveRoleForEmail(
             payload.email,
@@ -179,14 +182,13 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
           inviteToken,
           inviteTokenExpires,
         });
+        usersByEmail.set(payload.email, createdUser);
+        usersByName.set(normalizeName(createdUser.name), createdUser);
+        usersById.set(String(createdUser._id), createdUser);
         summary.created += 1;
 
         if (sendInvites) {
-          const createdUser = await User.findOne({ email: payload.email });
-          const sent = await sendActivationEmail(createdUser, inviteToken);
-          if (sent) {
-            summary.invitesSent += 1;
-          }
+          inviteTasks.push(() => sendActivationEmail(createdUser, inviteToken));
         }
 
         continue;
@@ -221,14 +223,12 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
         profileUpdate.passwordHash = null;
 
         if (sendInvites) {
-          const sent = await sendActivationEmail(existingUser, inviteToken);
-          if (sent) {
-            summary.invitesSent += 1;
-          }
+          inviteTasks.push(() => sendActivationEmail(existingUser, inviteToken));
         }
       }
 
       await User.updateOne({ _id: existingUser._id }, { $set: profileUpdate });
+      Object.assign(existingUser, profileUpdate);
       summary.updated += 1;
     } catch (error) {
       summary.errors.push({ email: payload.email, message: error.message });
@@ -248,14 +248,14 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
       continue;
     }
 
-    const user = await User.findOne({ email });
+    const user = usersByEmail.get(email);
 
     if (!user) {
       continue;
     }
 
     const manager = managerEmail
-      ? await User.findOne({ email: managerEmail })
+      ? usersByEmail.get(managerEmail)
       : usersByName.get(normalizeName(managerName));
 
     if (!manager) {
@@ -279,15 +279,15 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
     const payload = buildUserPayload(row);
     const matchedUser = usersByName.get(normalizeName(payload.name));
     const email = String(payload.email || matchedUser?.email || "").toLowerCase();
-    const user = email ? await User.findOne({ email }) : null;
+    const user = email ? usersByEmail.get(email) : null;
 
     if (!user || !user.managerId) {
       continue;
     }
 
-    const manager = await User.findById(user.managerId).select("managerId");
+    const manager = usersById.get(String(user.managerId));
     const alternateManager = manager?.managerId
-      ? await User.findById(manager.managerId).select("_id name email")
+      ? usersById.get(String(manager.managerId))
       : null;
 
     user.alternateManagers = alternateManager
@@ -295,6 +295,17 @@ async function importEmployeeRows(rows, { sendInvites = true } = {}) {
       : [];
     user.alternateApproverIds = alternateManager ? [alternateManager._id] : [];
     await user.save();
+  }
+
+  if (sendInvites && inviteTasks.length) {
+    const inviteResults = await Promise.allSettled(inviteTasks.map((task) => task()));
+    for (const result of inviteResults) {
+      if (result.status === "fulfilled" && result.value) {
+        summary.invitesSent += 1;
+      } else if (result.status === "rejected") {
+        summary.errors.push({ message: result.reason?.message || "Activation email failed." });
+      }
+    }
   }
 
   return summary;
