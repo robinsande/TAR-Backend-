@@ -39,8 +39,11 @@ function getTransporter() {
     if (env.brevoSmtpUser && env.brevoSmtpKey) {
       transporter = nodemailer.createTransport({
         host: "smtp-relay.brevo.com",
-        port: 587,
+        port: 2525,
         secure: false,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 20000,
         auth: {
           user: env.brevoSmtpUser,
           pass: env.brevoSmtpKey,

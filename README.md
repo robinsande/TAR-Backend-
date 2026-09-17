@@ -58,7 +58,7 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 3. Restart the backend after changing `.env`.
 4. In Render, add the same three values under the `tar-backend` service environment variables and redeploy.
 
-The sender address must be verified in Brevo. Do not put the SMTP key in source control or send it through chat.
+The sender address must be verified in Brevo. The SMTP fallback uses Brevo port `2525` to avoid common hosting restrictions on port `587`. Do not put the SMTP key in source control or send it through chat.
 
 ## Frontend integration
 
