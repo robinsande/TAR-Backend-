@@ -3,6 +3,13 @@ const env = require("../config/env");
 
 let transporter = null;
 
+function isEmailConfigured() {
+  return Boolean(
+    (env.brevoSmtpUser && env.brevoSmtpKey) ||
+    (env.gmailUser && env.gmailAppPassword)
+  );
+}
+
 function getTransporter() {
   if (!transporter) {
     if (env.brevoSmtpUser && env.brevoSmtpKey) {
@@ -95,6 +102,7 @@ async function sendTemporaryPasswordEmail(user, temporaryPassword, expiresAt) {
 }
 
 module.exports = {
+  isEmailConfigured,
   sendEmail,
   sendActivationEmail,
   sendTemporaryPasswordEmail,

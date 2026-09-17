@@ -46,6 +46,20 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - `FRONTEND_URL`: Base URL used in account activation links (must match where you serve `care-travel-request-frontend`, e.g. `http://localhost:5500`).
 - `NODE_ENV`: `development` | `test` | `production`.
 
+### Brevo invitation email setup
+
+1. In Brevo, open **Transactional > Settings > SMTP & API** and copy the SMTP login and SMTP key.
+2. Set these backend variables locally without committing the key:
+  ```env
+  BREVO_SMTP_USER=your-brevo-smtp-login
+  BREVO_SMTP_KEY=your-brevo-smtp-key
+  EMAIL_FROM=verified-sender@care.org
+  ```
+3. Restart the backend after changing `.env`.
+4. In Render, add the same three values under the `tar-backend` service environment variables and redeploy.
+
+The sender address must be verified in Brevo. Do not put the SMTP key in source control or send it through chat.
+
 ## Frontend integration
 
 This API is designed to work with the static frontend at `care-travel-request-frontend`:

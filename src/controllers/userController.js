@@ -4,7 +4,7 @@ const { listEligiblePassengers } = require("../services/passengerService");
 const { hashPassword } = require("../services/passwordService");
 const HttpError = require("../utils/httpError");
 const crypto = require("crypto");
-const { sendTemporaryPasswordEmail } = require("../services/emailService");
+const { isEmailConfigured, sendTemporaryPasswordEmail } = require("../services/emailService");
 
 function generateTemporaryPassword() {
   return crypto.randomBytes(12).toString("base64url");
@@ -204,6 +204,13 @@ async function resetUserPassword(req, res) {
 }
 
 async function sendBulkInvitations(req, res) {
+  if (!isEmailConfigured()) {
+    throw new HttpError(
+      503,
+      "Invitation email is not configured. Set BREVO_SMTP_USER and BREVO_SMTP_KEY, or GMAIL_USER and GMAIL_APP_PASSWORD, then restart the backend."
+    );
+  }
+
   const requestedIds = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
   const query = req.body?.all
     ? { isActive: { $ne: false }, role: { $ne: "superadmin" }, _id: { $ne: req.user.id } }
