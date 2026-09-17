@@ -4,6 +4,7 @@ const { listEligiblePassengers } = require("../services/passengerService");
 const { hashPassword } = require("../services/passwordService");
 const HttpError = require("../utils/httpError");
 const crypto = require("crypto");
+const { sendTemporaryPasswordEmail } = require("../services/emailService");
 
 function generateTemporaryPassword() {
   return crypto.randomBytes(12).toString("base64url");
@@ -191,7 +192,7 @@ async function resetUserPassword(req, res) {
   const temporaryPassword = generateTemporaryPassword();
   user.passwordHash = await hashPassword(temporaryPassword);
   user.passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  user.mustSetPassword = false;
+  user.mustSetPassword = true;
   await user.save();
 
   return res.json({
@@ -200,6 +201,39 @@ async function resetUserPassword(req, res) {
     passwordExpiresAt: user.passwordExpiresAt,
     temporaryPassword,
   });
+}
+
+async function sendBulkInvitations(req, res) {
+  const requestedIds = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+  const query = req.body?.all
+    ? { isActive: { $ne: false }, role: { $ne: "superadmin" }, _id: { $ne: req.user.id } }
+    : { _id: { $in: requestedIds }, isActive: { $ne: false }, role: { $ne: "superadmin" }, _id: { $ne: req.user.id } };
+  const users = await User.find(query).select("_id name email role");
+
+  if (!users.length) {
+    throw new HttpError(400, "Select at least one active user to invite.");
+  }
+
+  const results = await Promise.allSettled(users.map(async (user) => {
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    user.passwordHash = await hashPassword(temporaryPassword);
+    user.passwordExpiresAt = passwordExpiresAt;
+    user.mustSetPassword = true;
+    user.inviteToken = null;
+    user.inviteTokenExpires = null;
+    await user.save();
+    const sent = await sendTemporaryPasswordEmail(user, temporaryPassword, passwordExpiresAt);
+    if (!sent) throw new Error(`Invitation email failed for ${user.email}`);
+    return user.email;
+  }));
+
+  const sent = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+  const errors = results
+    .filter((result) => result.status === "rejected")
+    .map((result) => ({ message: result.reason?.message || "Invitation failed" }));
+
+  return res.json({ invited: sent.length, requested: users.length, emails: sent, errors });
 }
 
 async function updateUserRole(req, res) {
@@ -244,6 +278,7 @@ module.exports = {
   updateUserRole,
   updateUserProfile,
   resetUserPassword,
+    sendBulkInvitations,
   updateUserStatus,
   deleteUser,
   listApprovers,

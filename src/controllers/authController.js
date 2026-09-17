@@ -124,14 +124,6 @@ async function setPassword(req, res) {
     throw new HttpError(403, "This user account is inactive");
   }
 
-  if (user.mustSetPassword) {
-    throw new HttpError(
-      403,
-      "Please activate your account first using the link sent to your email.",
-      { code: "ACCOUNT_NOT_ACTIVATED" }
-    );
-  }
-
   const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);
 
   if (!passwordMatches) {
@@ -140,6 +132,7 @@ async function setPassword(req, res) {
 
   user.passwordHash = await hashPassword(newPassword);
   user.passwordExpiresAt = null;
+  user.mustSetPassword = false;
   await user.save();
 
   const token = signToken({
