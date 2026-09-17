@@ -11,7 +11,11 @@ function generateTemporaryPassword() {
 }
 
 async function getMe(req, res) {
-  return res.json(req.currentUser);
+  const user = await User.findById(req.user.id)
+    .populate("managerId", "name email role isActive")
+    .populate("alternateApproverIds", "name email role isActive department")
+    .select("-passwordHash -inviteToken -inviteTokenExpires");
+  return res.json(user);
 }
 
 async function updateMe(req, res) {
