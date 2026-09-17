@@ -8,7 +8,7 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - Approver selection via `selected_approver_id` (eligible admins), enforced on the server.
 - Travel request lifecycle support for create, approve, reject, and rejected-request resubmit.
 - Reimbursement reports with approve / reject and PDF download.
-- In-app notifications plus Gmail/Nodemailer email notifications.
+- In-app notifications plus Brevo email notifications.
 - Audit logging for request and reimbursement lifecycle events.
 - Spreadsheet import via CLI or superadmin upload endpoint.
 - Request filtering, list scopes (`mine` / `team` / `all`), and pagination.
@@ -18,7 +18,7 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - Express
 - MongoDB with Mongoose
 - JWT authentication
-- Nodemailer + Gmail for email delivery
+- Brevo API or SMTP for email delivery
 - Jest and Supertest for tests
 
 ## Getting Started
@@ -38,10 +38,9 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - `MONGODB_URI`: MongoDB connection string.
 - `JWT_SECRET`: Secret used to sign JWTs (required strong value in production).
 - `JWT_EXPIRES_IN`: Token lifetime, for example `1d`.
-- `GMAIL_USER`: Gmail address used to send mail.
-- `GMAIL_APP_PASSWORD`: Gmail app password (not your normal Gmail password).
-- `BREVO_SMTP_USER`: Brevo SMTP login, used instead of Gmail when configured.
+- `BREVO_SMTP_USER`: Brevo SMTP login.
 - `BREVO_SMTP_KEY`: Brevo SMTP key/password from Brevo SMTP settings.
+- `BREVO_API_KEY`: Brevo API key. Preferred on Render because it uses HTTPS instead of an SMTP socket.
 - `EMAIL_FROM`: Sender address shown to recipients.
 - `FRONTEND_URL`: Base URL used in account activation links (must match where you serve `care-travel-request-frontend`, e.g. `http://localhost:5500`).
 - `NODE_ENV`: `development` | `test` | `production`.
@@ -51,6 +50,7 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 1. In Brevo, open **Transactional > Settings > SMTP & API** and copy the SMTP login and SMTP key.
 2. Set these backend variables locally without committing the key:
   ```env
+  BREVO_API_KEY=your-brevo-api-key
   BREVO_SMTP_USER=your-brevo-smtp-login
   BREVO_SMTP_KEY=your-brevo-smtp-key
   EMAIL_FROM=verified-sender@care.org

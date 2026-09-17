@@ -69,11 +69,10 @@ const env = {
     process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/care-travel-request",
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "1d",
-  gmailUser: process.env.GMAIL_USER || "",
-  gmailAppPassword: process.env.GMAIL_APP_PASSWORD || "",
   brevoSmtpUser: process.env.BREVO_SMTP_USER || "",
   brevoSmtpKey: process.env.BREVO_SMTP_KEY || "",
-  emailFrom: process.env.EMAIL_FROM || process.env.GMAIL_USER || process.env.BREVO_SMTP_USER || "",
+  brevoApiKey: process.env.BREVO_API_KEY || "",
+  emailFrom: process.env.EMAIL_FROM || process.env.BREVO_SMTP_USER || "",
   frontendUrl,
   corsOrigins: buildCorsOrigins(frontendUrl),
 };

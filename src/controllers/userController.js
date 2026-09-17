@@ -207,7 +207,7 @@ async function sendBulkInvitations(req, res) {
   if (!isEmailConfigured()) {
     throw new HttpError(
       503,
-      "Invitation email is not configured. Set BREVO_SMTP_USER and BREVO_SMTP_KEY, or GMAIL_USER and GMAIL_APP_PASSWORD, then restart the backend."
+      "Invitation email is not configured. Set BREVO_API_KEY, or BREVO_SMTP_USER and BREVO_SMTP_KEY, then restart the backend."
     );
   }
 

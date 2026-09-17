@@ -5,9 +5,33 @@ let transporter = null;
 
 function isEmailConfigured() {
   return Boolean(
-    (env.brevoSmtpUser && env.brevoSmtpKey) ||
-    (env.gmailUser && env.gmailAppPassword)
+    env.brevoApiKey ||
+    (env.brevoSmtpUser && env.brevoSmtpKey)
   );
+}
+
+async function sendBrevoApiEmail(to, subject, html) {
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "api-key": env.brevoApiKey,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: env.emailFrom },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Brevo API ${response.status}: ${message}`);
+  }
+
+  return true;
 }
 
 function getTransporter() {
@@ -22,14 +46,6 @@ function getTransporter() {
           pass: env.brevoSmtpKey,
         },
       });
-    } else if (env.gmailUser && env.gmailAppPassword) {
-      transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: env.gmailUser,
-          pass: env.gmailAppPassword,
-        },
-      });
     }
   }
 
@@ -37,16 +53,25 @@ function getTransporter() {
 }
 
 async function sendEmail(to, subject, html) {
+  if (env.brevoApiKey) {
+    try {
+      return await sendBrevoApiEmail(to, subject, html);
+    } catch (error) {
+      console.error("Brevo API email failed:", error.message);
+      return false;
+    }
+  }
+
   const mailer = getTransporter();
 
   if (!mailer) {
-    console.warn("Email skipped: configure BREVO_SMTP_USER/BREVO_SMTP_KEY or Gmail credentials.");
+    console.warn("Email skipped: configure BREVO_API_KEY or BREVO_SMTP_USER/BREVO_SMTP_KEY.");
     return false;
   }
 
   try {
     await mailer.sendMail({
-      from: env.emailFrom || env.gmailUser || env.brevoSmtpUser,
+      from: env.emailFrom || env.brevoSmtpUser,
       to,
       subject,
       html,
