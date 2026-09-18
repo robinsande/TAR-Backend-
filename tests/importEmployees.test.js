@@ -9,7 +9,6 @@ const os = require("os");
 const path = require("path");
 const xlsx = require("xlsx");
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
 const User = require("../src/models/User");
 const {
   buildUserPayload,
@@ -17,8 +16,7 @@ const {
   importEmployeesFromFile,
 } = require("../src/services/employeeImportService");
 const { hashPassword } = require("../src/services/passwordService");
-
-let mongoServer;
+const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
 function createWorkbookFile(rows) {
   const workbook = xlsx.utils.book_new();
@@ -34,8 +32,7 @@ function createWorkbookFile(rows) {
 }
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await startTestDatabase();
 });
 
 afterEach(async () => {
@@ -44,7 +41,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  await stopTestDatabase();
 });
 
 describe("employee import helpers", () => {

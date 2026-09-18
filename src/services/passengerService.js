@@ -15,7 +15,7 @@ function idToString(value) {
 async function listEligiblePassengers() {
   return User.find({
     isActive: true,
-    role: { $in: ["user", "admin", "superadmin"] },
+    role: { $in: ["user", "admin"] },
   })
     .select(PASSENGER_SELECT)
     .sort({ name: 1 });

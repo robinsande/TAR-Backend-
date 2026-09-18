@@ -6,15 +6,14 @@ jest.mock("../src/services/emailService", () => ({
 
 const request = require("supertest");
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
 const createApp = require("../src/app");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
 const ReimbursementReport = require("../src/models/ReimbursementReport");
 const ExpenseLineItem = require("../src/models/ExpenseLineItem");
 const { hashPassword } = require("../src/services/passwordService");
+const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
-let mongoServer;
 let app;
 
 async function createUser(overrides = {}) {
@@ -118,14 +117,13 @@ async function createApprovedTravelRequest(manager, traveller, booker = travelle
   await request(app)
     .patch(`/api/requests/${createResponse.body._id}/approve`)
     .set("Authorization", `Bearer ${managerToken}`)
-    .send({});
+    .send({ signature: "Manager Signature" });
 
   return createResponse.body._id;
 }
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await startTestDatabase();
   app = createApp();
 });
 
@@ -140,7 +138,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  await stopTestDatabase();
 });
 
 describe("reimbursement workflow", () => {
@@ -163,7 +161,6 @@ describe("reimbursement workflow", () => {
       .post("/api/reimbursements")
       .set("Authorization", `Bearer ${requesterToken}`)
       .send(buildReimbursementPayload(travelRequestId, manager._id));
-
     expect(response.status).toBe(201);
     expect(response.body.status).toBe("pending");
     expect(response.body.totalAmountKsh).toBe(12000);

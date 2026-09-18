@@ -16,7 +16,9 @@ async function getDirectReportIds(adminId) {
 }
 
 function buildPersonalRequestScope(userId) {
-  return { requestedBy: userId };
+  return {
+    $or: [{ requestedBy: userId }, { "passengers.user": userId }],
+  };
 }
 
 /**

@@ -6,14 +6,13 @@ jest.mock("../src/services/emailService", () => ({
 
 const request = require("supertest");
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
 const createApp = require("../src/app");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
 const Notification = require("../src/models/Notification");
 const { hashPassword } = require("../src/services/passwordService");
+const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
-let mongoServer;
 let app;
 
 async function createUser(overrides = {}) {
@@ -74,8 +73,7 @@ function buildRequestPayload(selectedApproverId, overrides = {}) {
 }
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await startTestDatabase();
   app = createApp();
 });
 
@@ -89,7 +87,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  await stopTestDatabase();
 });
 
 describe("authentication and authorization", () => {
@@ -549,7 +547,7 @@ describe("request scoping and workflow", () => {
       .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
     const pdfResponse = await request(app)
-      .get(`/api/travel-requests/${createResponse.body._id}/pdf`)
+      .get(`/api/travel-requests/${createResponse.body._id}/pdf?preview=true`)
       .set("Authorization", `Bearer ${requesterToken}`);
 
     expect(pdfResponse.status).toBe(200);

@@ -6,7 +6,7 @@ const {
   notifyTravelRequestPassengers,
 } = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
-const { getEligibleApproverById, resolveManagerApproverForUser, listApproversForUser } = require("../services/approverService");
+const { getEligibleApproverById, resolveManagerApproverForUser } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const {
@@ -39,6 +39,10 @@ async function resolveApproverForRequest(approverId, requesterId, passengers, re
 
   const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
   const expectedApprover = await resolveManagerApproverForUser(requesterId);
+  const requester = await User.findById(requesterId).select("alternateApproverIds");
+  const alternateApproverIds = new Set(
+    (requester?.alternateApproverIds || []).map((id) => String(id))
+  );
 
   if (requesterRole === "superadmin") {
     if (!approverId) {
@@ -50,21 +54,18 @@ async function resolveApproverForRequest(approverId, requesterId, passengers, re
   }
 
   if (!expectedApprover) {
-    if (approverId) {
-      const allowedApprovers = await listApproversForUser(requesterId);
-      if (allowedApprovers.some((approver) => String(approver._id) === String(approverId))) {
-        return getEligibleApproverById(approverId, { excludeUserIds });
-      }
+    if (approverId && alternateApproverIds.has(String(approverId))) {
+      return getEligibleApproverById(approverId, { excludeUserIds });
     }
     throw new HttpError(400, "This user has no valid manager approver assigned");
   }
 
   if (approverId && String(approverId) !== String(expectedApprover._id)) {
-    const allowedAlternates = await listApproversForUser(requesterId);
-    if (!allowedAlternates.some((approver) => String(approver._id) === String(approverId))) {
-      throw new HttpError(400, "Selected approver is not assigned to this user");
+    if (alternateApproverIds.has(String(approverId))) {
+      return getEligibleApproverById(approverId, { excludeUserIds });
     }
-    return getEligibleApproverById(approverId, { excludeUserIds });
+
+    return getEligibleApproverById(expectedApprover._id, { excludeUserIds });
   }
 
   return getEligibleApproverById(approverId || expectedApprover._id, { excludeUserIds });

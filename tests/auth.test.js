@@ -6,18 +6,16 @@ jest.mock("../src/services/emailService", () => ({
 
 const request = require("supertest");
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
 const createApp = require("../src/app");
 const User = require("../src/models/User");
 const { hashPassword } = require("../src/services/passwordService");
 const { generateInviteToken, getInviteTokenExpiry } = require("../src/services/inviteTokenService");
+const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
-let mongoServer;
 let app;
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await startTestDatabase();
   app = createApp();
 });
 
@@ -27,7 +25,7 @@ afterEach(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  await stopTestDatabase();
 });
 
 describe("account activation", () => {

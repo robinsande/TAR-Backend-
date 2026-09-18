@@ -286,8 +286,12 @@ function drawTarGrid(doc, rows, options = {}) {
 
     row.cells.forEach((cell) => {
       const width = tableWidth * cell.width;
+      const imageSource = cell.image &&
+        (String(cell.image).startsWith("data:image/") || fs.existsSync(String(cell.image)))
+        ? cell.image
+        : null;
       drawBox(doc, x, y, width, rowHeight, { fill: cell.fill });
-      if (cell.image) {
+      if (imageSource) {
         if (cell.value) {
           doc
             .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
@@ -298,7 +302,7 @@ function drawTarGrid(doc, rows, options = {}) {
               height: 12,
             });
         }
-        doc.image(cell.image, x + padding, y + padding + (cell.value ? 12 : 0), {
+        doc.image(imageSource, x + padding, y + padding + (cell.value ? 12 : 0), {
           fit: [width - padding * 2, rowHeight - padding * 2 - (cell.value ? 12 : 0)],
           align: "center",
           valign: "center",
@@ -377,9 +381,33 @@ function streamPdf(res, filename, buildContent) {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
-  doc.pipe(res);
-  buildContent(doc);
-  doc.end();
+  const chunks = [];
+  let settled = false;
+
+  doc.on("data", (chunk) => chunks.push(chunk));
+  doc.on("error", (error) => {
+    if (settled) return;
+    settled = true;
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Failed to generate PDF" });
+    } else {
+      res.destroy(error);
+    }
+  });
+  doc.on("end", () => {
+    if (settled) return;
+    settled = true;
+    const pdf = Buffer.concat(chunks);
+    res.setHeader("Content-Length", pdf.length);
+    res.end(pdf);
+  });
+
+  try {
+    buildContent(doc);
+    doc.end();
+  } catch (error) {
+    doc.emit("error", error);
+  }
 }
 
 function getPassengerNames(requestDocument) {
