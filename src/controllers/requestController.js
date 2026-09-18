@@ -189,7 +189,8 @@ async function approveRequest(req, res) {
     "approved",
     req.user.id,
     req.body?.comment || null,
-    req.body.signature
+    req.body.signature,
+    req.body.decisionDate || null
   );
 
   await requestDocument.save();

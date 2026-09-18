@@ -296,7 +296,7 @@ function drawTarGrid(doc, rows, options = {}) {
           doc
             .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
             .fontSize(cell.size || 8)
-            .fillColor(cell.color || (cell.bold ? "#000000" : "#123a8c"))
+            .fillColor(cell.color || (cell.bold ? "#000000" : "#0000FF"))
             .text(dash(cell.value), x + padding, y + padding, {
               width: width - padding * 2,
               height: 12,
@@ -311,7 +311,7 @@ function drawTarGrid(doc, rows, options = {}) {
         doc
           .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
           .fontSize(cell.size || 8)
-          .fillColor(cell.color || (cell.bold ? "#000000" : "#123a8c"))
+          .fillColor(cell.color || (cell.bold ? "#000000" : "#0000FF"))
           .text(dash(cell.value), x + padding, y + padding, {
             width: width - padding * 2,
             height: rowHeight - padding * 2,

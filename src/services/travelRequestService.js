@@ -31,11 +31,11 @@ function getEditableRequestSnapshot(requestDocument) {
   };
 }
 
-function applyRequestDecision(requestDocument, status, decidedBy, comment = null, signature = null) {
+function applyRequestDecision(requestDocument, status, decidedBy, comment = null, signature = null, decidedAt = null) {
   requestDocument.status = status;
   requestDocument.decision = {
     decidedBy,
-    decidedAt: new Date(),
+    decidedAt: decidedAt ? new Date(decidedAt) : new Date(),
     comment,
     signature,
   };
