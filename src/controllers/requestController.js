@@ -261,8 +261,8 @@ async function resubmitRequest(req, res) {
 
   ensureRequestOwner(req.user, requestDocument);
 
-  if (requestDocument.status !== "rejected") {
-    throw new HttpError(400, "Only rejected requests can be edited and resubmitted");
+  if (!["pending", "rejected"].includes(requestDocument.status)) {
+    throw new HttpError(400, "Only pending or rejected requests can be edited");
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
