@@ -428,7 +428,7 @@ function buildTravelRequestPdf(res, requestDocument) {
     doc.font("Helvetica-Bold").fontSize(8).text("COUNTRY OFFICES FLEET POLICIES", PAGE.margin, PAGE.margin + 84, {
       width: contentWidth(), align: "center",
     });
-    doc.font("Helvetica-Bold").fontSize(9).text("3.5.7    TRAVEL AUTHORITY REQUEST", PAGE.margin, PAGE.margin + 108, {
+    doc.font("Helvetica-Bold").fontSize(9).text("3.5.7    TRAVEL AUTHORIZATION REQUEST", PAGE.margin, PAGE.margin + 108, {
       width: contentWidth(), align: "left",
     });
     doc.y = PAGE.margin + 124;
