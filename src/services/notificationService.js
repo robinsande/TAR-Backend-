@@ -1,4 +1,5 @@
 const Notification = require("../models/Notification");
+const User = require("../models/User");
 const { sendEmail } = require("./emailService");
 const { loadPassengerUsers } = require("./passengerService");
 
@@ -77,6 +78,11 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
   }
 
   switch (type) {
+    case "flight_booking_required":
+      return {
+        subject: "Flight booking required for approved TAR",
+        message: `${requesterLabel} has an approved TAR for ${destination} for ${purpose}. Please arrange the required flight booking and reply to the requester if more information is needed.`,
+      };
     case "approval_reminder":
       return {
         subject: "Reminder: travel request awaiting your approval",
@@ -156,10 +162,39 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
     message: content.message,
     subject: content.subject,
     requestId: requestDocument._id,
-    replyTo: audience === "approver" ? requester?.email || requestDocument.requestedBy?.email : null,
+    replyTo: ["approver", "flight_booking"].includes(audience)
+      ? requester?.email || requestDocument.requestedBy?.email
+      : null,
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });
+}
+
+async function notifyFlightBookingSuperAdmins(requestDocument) {
+  if (
+    requestDocument.status !== "approved" ||
+    !requestDocument.modeOfTravel?.aircraft
+  ) {
+    return [];
+  }
+
+  const superAdmins = await User.find({
+    role: "superadmin",
+    isActive: true,
+  }).select("-passwordHash");
+  const requester = requestDocument.requestedBy;
+
+  return Promise.all(
+    superAdmins.map((superAdmin) =>
+      notifyTravelRequestUser(
+        superAdmin,
+        "flight_booking_required",
+        requestDocument,
+        "flight_booking",
+        requester
+      )
+    )
+  );
 }
 
 async function notifyTravelRequestPassengers(requestDocument, type) {
@@ -193,5 +228,6 @@ async function notifyReimbursementUser(recipient, type, report) {
 module.exports = {
   notifyTravelRequestUser,
   notifyTravelRequestPassengers,
+  notifyFlightBookingSuperAdmins,
   notifyReimbursementUser,
 };

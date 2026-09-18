@@ -286,6 +286,57 @@ describe("request scoping and workflow", () => {
     expect(approveResponse.body.decision.signature).toBe("Manager Signature");
   });
 
+  it("notifies active superadmins to book flights only after an aircraft TAR is approved", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager@example.com",
+      role: "admin",
+    });
+    const superadmin = await createUser({
+      name: "Travel Desk",
+      email: "travel-desk@example.com",
+      role: "superadmin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester@example.com",
+      managerId: manager._id,
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(
+        buildRequestPayload(manager._id, {
+          modeOfTravel: { careVehicle: false, publicTransport: false, aircraft: true },
+          passengers: [passengerFor(requester)],
+        })
+      );
+
+    expect(
+      await Notification.countDocuments({
+        recipient: superadmin._id,
+        type: "flight_booking_required",
+      })
+    ).toBe(0);
+
+    const approveToken = await login(manager.email);
+    const approveResponse = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/approve`)
+      .set("Authorization", `Bearer ${approveToken}`)
+      .send({ signature: "Manager Signature" });
+
+    expect(approveResponse.status).toBe(200);
+    expect(
+      await Notification.countDocuments({
+        recipient: superadmin._id,
+        type: "flight_booking_required",
+        request: createResponse.body._id,
+      })
+    ).toBe(1);
+  });
+
   it("stores history and resets status when a rejected request is resubmitted", async () => {
     const manager = await createUser({
       name: "Manager Admin",

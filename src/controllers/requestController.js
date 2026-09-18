@@ -4,6 +4,7 @@ const HttpError = require("../utils/httpError");
 const {
   notifyTravelRequestUser,
   notifyTravelRequestPassengers,
+  notifyFlightBookingSuperAdmins,
 } = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
 const { getEligibleApproverById, resolveManagerApproverForUser } = require("../services/approverService");
@@ -206,6 +207,12 @@ async function approveRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "approved");
+
+  const requester = requestDocument.requestedBy;
+  if (requester && !isPassengerOnRequest(requestDocument, requester)) {
+    await notifyTravelRequestUser(requester, "approved", requestDocument);
+  }
+  await notifyFlightBookingSuperAdmins(requestDocument);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
