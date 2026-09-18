@@ -30,11 +30,21 @@ function formatDate(value, options = {}) {
     return "N/A";
   }
 
-  return new Date(value).toLocaleDateString("en-KE", {
-    year: "numeric",
-    month: options.long ? "long" : "short",
-    day: "numeric",
-  });
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  if (options.long) {
+    return date.toLocaleDateString("en-GB", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }
+
+  return [
+    String(date.getDate()).padStart(2, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    date.getFullYear(),
+  ].join("/");
 }
 
 function formatCurrency(value) {
@@ -282,7 +292,7 @@ function drawTarGrid(doc, rows, options = {}) {
           doc
             .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
             .fontSize(cell.size || 8)
-            .fillColor(cell.color || "#000000")
+            .fillColor(cell.color || (cell.bold ? "#000000" : "#123a8c"))
             .text(dash(cell.value), x + padding, y + padding, {
               width: width - padding * 2,
               height: 12,
@@ -297,7 +307,7 @@ function drawTarGrid(doc, rows, options = {}) {
         doc
           .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
           .fontSize(cell.size || 8)
-          .fillColor(cell.color || "#000000")
+          .fillColor(cell.color || (cell.bold ? "#000000" : "#123a8c"))
           .text(dash(cell.value), x + padding, y + padding, {
             width: width - padding * 2,
             height: rowHeight - padding * 2,
@@ -541,7 +551,7 @@ function buildTravelRequestPdf(res, requestDocument) {
       .fontSize(8)
       .fillColor("#000000")
       .text(`Request ID: ${requestDocument._id}    Approved/Reviewed by: ${approver.name || "—"}`, PAGE.margin, doc.y + 3);
-    doc.font("Helvetica").fontSize(7).text("Page 1 of 1", PAGE.margin, PAGE.height - 32, { width: contentWidth(), align: "center" });
+    doc.font("Helvetica").fontSize(7).text("Page 1 of 1", PAGE.margin, PAGE.height - PAGE.margin - 10, { width: contentWidth(), align: "center" });
   });
 }
 
