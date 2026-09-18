@@ -90,7 +90,7 @@ async function createRequest(req, res) {
     selected_approver_id: approver._id,
     project: req.body.project,
     assignedAreaOfOperation: req.body.assignedAreaOfOperation,
-    employeeOffice: req.body.employeeOffice || requester.office || requester.department || null,
+    employeeOffice: req.body.employeeOffice || requester.office || null,
     purposeOfTrip: req.body.purposeOfTrip,
     requesterSignature: req.body.requesterSignature || null,
     modeOfTravel: req.body.modeOfTravel || {},

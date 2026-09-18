@@ -411,7 +411,7 @@ function buildTravelRequestPdf(res, requestDocument) {
   const passengerNumbers = getPassengerNumbers(requestDocument);
 
   streamPdf(res, `travel-request-${requestDocument._id}.pdf`, (doc) => {
-    const office = requestDocument.employeeOffice || requester.office || requester.department;
+    const office = requestDocument.employeeOffice || requester.office;
     const tripDate = formatDate(requestDocument.submittedAt);
     const travelMode = [
       `${checkboxMark(Boolean(mode.careVehicle))} CARE Vehicle`,
