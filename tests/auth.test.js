@@ -61,7 +61,7 @@ describe("account activation", () => {
     expect(loginResponse.status).toBe(200);
   });
 
-  it("blocks login until the account is activated", async () => {
+  it("allows staff with a password to sign in without an activation link", async () => {
     await User.create({
       name: "Alice User",
       email: "alice@example.com",
@@ -76,8 +76,9 @@ describe("account activation", () => {
       password: "TempPass123!",
     });
 
-    expect(response.status).toBe(403);
-    expect(response.body.details.code).toBe("ACCOUNT_NOT_ACTIVATED");
+    expect(response.status).toBe(200);
+    expect(response.body.token).toBeTruthy();
+    expect(response.body.user.mustSetPassword).toBe(true);
   });
 });
 

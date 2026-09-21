@@ -38,12 +38,6 @@ async function login(req, res) {
     throw new HttpError(403, "This user account is inactive");
   }
 
-  if (user.mustSetPassword) {
-    throw new HttpError(403, "This account has not been activated", {
-      code: "ACCOUNT_NOT_ACTIVATED",
-    });
-  }
-
   if (user.passwordExpiresAt && user.passwordExpiresAt <= new Date()) {
     throw new HttpError(403, "This temporary password has expired. Contact a superadmin for a new account password.");
   }
