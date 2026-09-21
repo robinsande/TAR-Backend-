@@ -166,7 +166,7 @@ describe("request scoping and workflow", () => {
     expect(passengerNotifications[0].message).toMatch(/listed as a passenger/i);
   });
 
-  it("routes requests through the manager hierarchy instead of allowing any approver selection", async () => {
+  it("allows staff to select any active admin as their approver", async () => {
     const seniorManager = await createUser({
       name: "Senior Manager",
       email: "senior@example.com",
@@ -191,7 +191,7 @@ describe("request scoping and workflow", () => {
       .send(buildRequestPayload(seniorManager._id, { passengers: [passengerFor(staff)] }));
 
     expect(response.status).toBe(201);
-    expect(String(response.body.selected_approver_id._id || response.body.selected_approver_id)).toBe(String(manager._id));
+    expect(String(response.body.selected_approver_id._id || response.body.selected_approver_id)).toBe(String(seniorManager._id));
   });
 
   it("prevents managers from selecting themselves as approver", async () => {
@@ -334,6 +334,48 @@ describe("request scoping and workflow", () => {
 
     expect(downloadResponse.status).toBe(200);
     expect(downloadResponse.text).toBe("scope document");
+  });
+
+  it("allows any selected per-request approver to approve the TAR", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager-multiple@example.com",
+      role: "admin",
+    });
+    const secondApprover = await createUser({
+      name: "Second Approver",
+      email: "second-approver@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester-multiple@example.com",
+      managerId: manager._id,
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(buildRequestPayload(manager._id, {
+        selected_approver_ids: [manager._id.toString(), secondApprover._id.toString()],
+        passengers: [passengerFor(requester)],
+      }));
+
+    const secondApproverToken = await login(secondApprover.email);
+    const pendingResponse = await request(app)
+      .get("/api/requests/pending-my-approval")
+      .set("Authorization", `Bearer ${secondApproverToken}`);
+    const approveResponse = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/approve`)
+      .set("Authorization", `Bearer ${secondApproverToken}`)
+      .send({ signature: "Second Approver Signature" });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.selected_approver_ids).toHaveLength(2);
+    expect(pendingResponse.status).toBe(200);
+    expect(pendingResponse.body[0]._id).toBe(createResponse.body._id);
+    expect(approveResponse.status).toBe(200);
   });
 
   it("shows existing requests to a recreated manager with the same email", async () => {

@@ -30,48 +30,26 @@ const {
   applyRequestResubmission,
 } = require("../services/travelRequestService");
 
-async function resolveApproverForRequest(approverId, requesterId, passengers, requesterRole) {
-  const requesterIdString = String(requesterId);
-
-  if (approverId && String(approverId) === requesterIdString) {
-    throw new HttpError(
-      400,
-      "Managers cannot approve their own request. Choose a different admin approver."
+async function resolveApproversForRequest(approverIds, requesterId, passengers, requesterRole) {
+  const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
+  const requestedIds = [...new Set((approverIds || []).filter(Boolean).map(String))];
+  if (requestedIds.length) {
+    return Promise.all(
+      requestedIds.map((approverId) => getEligibleApproverById(approverId, { excludeUserIds }))
     );
   }
 
-  const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
   const expectedApprover = await resolveManagerApproverForUser(requesterId);
-  const requester = await User.findById(requesterId).select("alternateApproverIds");
-  const alternateApproverIds = new Set(
-    (requester?.alternateApproverIds || []).map((id) => String(id))
-  );
-
-  if (requesterRole === "superadmin") {
-    if (!approverId) {
-      throw new HttpError(400, "Select an admin approver for this request");
-    }
-    return getEligibleApproverById(approverId, {
-      excludeUserIds: [requesterId, ...getPassengerUserIds({ passengers })],
-    });
-  }
-
   if (!expectedApprover) {
-    if (approverId && alternateApproverIds.has(String(approverId))) {
-      return getEligibleApproverById(approverId, { excludeUserIds });
-    }
-    throw new HttpError(400, "This user has no valid manager approver assigned");
+    throw new HttpError(
+      400,
+      requesterRole === "superadmin"
+        ? "Select an admin approver for this request"
+        : "This user has no valid manager approver assigned"
+    );
   }
 
-  if (approverId && String(approverId) !== String(expectedApprover._id)) {
-    if (alternateApproverIds.has(String(approverId))) {
-      return getEligibleApproverById(approverId, { excludeUserIds });
-    }
-
-    return getEligibleApproverById(expectedApprover._id, { excludeUserIds });
-  }
-
-  return getEligibleApproverById(approverId || expectedApprover._id, { excludeUserIds });
+  return [await getEligibleApproverById(expectedApprover._id, { excludeUserIds })];
 }
 
 async function createRequest(req, res) {
@@ -82,8 +60,8 @@ async function createRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
-  const approver = await resolveApproverForRequest(
-    req.body.selected_approver_id,
+  const approvers = await resolveApproversForRequest(
+    req.body.selected_approver_ids || [req.body.selected_approver_id],
     requester._id,
     passengers,
     requester.role
@@ -91,7 +69,8 @@ async function createRequest(req, res) {
 
   const requestDocument = await TravelRequest.create({
     requestedBy: requester._id,
-    selected_approver_id: approver._id,
+    selected_approver_id: approvers[0]._id,
+    selected_approver_ids: approvers.map((approver) => approver._id),
     project: req.body.project,
     assignedAreaOfOperation: req.body.assignedAreaOfOperation,
     employeeOffice: req.body.employeeOffice || requester.office || null,
@@ -112,7 +91,11 @@ async function createRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
-  await notifyTravelRequestUser(approver, "new_request", requestDocument, "approver", requester);
+  await Promise.all(
+    approvers.map((approver) =>
+      notifyTravelRequestUser(approver, "new_request", requestDocument, "approver", requester)
+    )
+  );
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -310,7 +293,8 @@ async function rejectRequest(req, res) {
 async function resubmitRequest(req, res) {
   const requestDocument = await TravelRequest.findById(req.params.id)
     .populate("requestedBy")
-    .populate("selected_approver_id");
+    .populate("selected_approver_id")
+    .populate("selected_approver_ids");
 
   if (!requestDocument) {
     throw new HttpError(404, "Travel request not found");
@@ -323,8 +307,8 @@ async function resubmitRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
-  const approver = await resolveApproverForRequest(
-    req.body.selected_approver_id,
+  const approvers = await resolveApproversForRequest(
+    req.body.selected_approver_ids || [req.body.selected_approver_id],
     req.user.id,
     passengers,
     req.user.role
@@ -337,7 +321,7 @@ async function resubmitRequest(req, res) {
     editedAt: new Date(),
   });
 
-  applyRequestResubmission(requestDocument, req.body, approver._id, passengers);
+  applyRequestResubmission(requestDocument, req.body, approvers, passengers);
 
   await requestDocument.save();
 
@@ -349,7 +333,11 @@ async function resubmitRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "resubmitted");
-  await notifyTravelRequestUser(approver, "resubmitted", requestDocument, "approver", requestDocument.requestedBy);
+  await Promise.all(
+    approvers.map((approver) =>
+      notifyTravelRequestUser(approver, "resubmitted", requestDocument, "approver", requestDocument.requestedBy)
+    )
+  );
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -360,7 +348,10 @@ async function getPendingMyApproval(req, res) {
   const query =
     req.user.role === "superadmin"
       ? { status: "pending" }
-      : { selected_approver_id: req.user.id, status: "pending" };
+      : {
+          $or: [{ selected_approver_id: req.user.id }, { selected_approver_ids: req.user.id }],
+          status: "pending",
+        };
 
   const requests = await getTravelRequestPopulateQuery(
     TravelRequest.find(query).sort({ createdAt: -1 })

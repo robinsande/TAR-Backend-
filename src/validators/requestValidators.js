@@ -5,9 +5,15 @@ function isIsoDate(value) {
 }
 
 const travelRequestBaseValidators = [
-  body("selected_approver_id")
+  body("selected_approver_id").optional().isMongoId().withMessage("A valid selected approver ID is required"),
+  body("selected_approver_ids")
+    .optional()
+    .isArray({ min: 1 })
+    .withMessage("Select at least one approver"),
+  body("selected_approver_ids.*")
+    .optional()
     .isMongoId()
-    .withMessage("A valid selected approver ID is required"),
+    .withMessage("Each approver ID must be valid"),
   body("project.name").isString().notEmpty().withMessage("Project name is required"),
   body("project.businessUnit").isString().notEmpty().withMessage("Business unit is required"),
   body("project.fundCode").isString().notEmpty().withMessage("Fund code is required"),

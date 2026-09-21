@@ -130,6 +130,10 @@ const travelRequestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    selected_approver_ids: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
     project: {
       type: projectSchema,
       required: true,

@@ -4,6 +4,7 @@ function getTravelRequestPopulateQuery(query) {
   return query
     .populate("requestedBy", "-passwordHash")
     .populate("selected_approver_id", "-passwordHash")
+    .populate("selected_approver_ids", "-passwordHash")
     .populate("decision.decidedBy", "-passwordHash")
     .populate("passengers.user", "-passwordHash");
 }
@@ -19,6 +20,7 @@ async function buildTravelRequestResponse(requestId) {
 function getEditableRequestSnapshot(requestDocument) {
   return {
     selected_approver_id: requestDocument.selected_approver_id,
+    selected_approver_ids: requestDocument.selected_approver_ids || [requestDocument.selected_approver_id],
     project: requestDocument.project,
     assignedAreaOfOperation: requestDocument.assignedAreaOfOperation,
     employeeOffice: requestDocument.employeeOffice,
@@ -54,7 +56,7 @@ function resetRequestDecision(requestDocument) {
   };
 }
 
-function applyRequestResubmission(requestDocument, payload, approverId, passengers) {
+function applyRequestResubmission(requestDocument, payload, approvers, passengers) {
   requestDocument.project = payload.project;
   requestDocument.assignedAreaOfOperation = payload.assignedAreaOfOperation;
   requestDocument.employeeOffice = payload.employeeOffice || requestDocument.employeeOffice || null;
@@ -63,7 +65,8 @@ function applyRequestResubmission(requestDocument, payload, approverId, passenge
   requestDocument.itinerary = payload.itinerary;
   requestDocument.travelSegments = payload.travelSegments || [];
   requestDocument.passengers = passengers;
-  requestDocument.selected_approver_id = approverId;
+  requestDocument.selected_approver_id = approvers[0]._id;
+  requestDocument.selected_approver_ids = approvers.map((approver) => approver._id);
   requestDocument.version += 1;
   requestDocument.status = "pending";
   resetRequestDecision(requestDocument);

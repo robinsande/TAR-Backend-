@@ -27,6 +27,13 @@ function buildPersonalRequestScope(userId) {
   };
 }
 
+function getRequestApproverIds(request) {
+  const ids = request?.selected_approver_ids?.length
+    ? request.selected_approver_ids
+    : [request?.selected_approver_id];
+  return ids.map(idToString).filter(Boolean);
+}
+
 /**
  * Build Mongo filter for list endpoints.
  * @param {{ id: string, role: string }} user
@@ -57,6 +64,7 @@ async function buildRequestScope(user, listScope) {
         { requestedBy: { $in: directReportIds } },
         { "passengers.user": { $in: directReportIds } },
         { selected_approver_id: user.id },
+        { selected_approver_ids: user.id },
       ],
     };
   }
@@ -70,14 +78,14 @@ async function canAccessRequest(user, request) {
   }
 
   const requesterId = idToString(request.requestedBy);
-  const approverId = idToString(request.selected_approver_id);
+  const approverIds = getRequestApproverIds(request);
 
   if (requesterId === user.id || isPassengerOnRequest(request, user.id)) {
     return true;
   }
 
   if (user.role === "admin") {
-    if (approverId === user.id) {
+    if (approverIds.includes(user.id)) {
       return true;
     }
 
@@ -103,10 +111,10 @@ async function ensureCanAccessRequest(user, request) {
 }
 
 function ensureApprover(user, request) {
-  const approverId = idToString(request.selected_approver_id);
+  const approverIds = getRequestApproverIds(request);
   const requesterId = idToString(request.requestedBy);
 
-  if (user.role !== "admin" || approverId !== user.id) {
+  if (user.role !== "admin" || !approverIds.includes(user.id)) {
     throw new HttpError(403, "Only the assigned approver can perform this action");
   }
 
@@ -125,6 +133,7 @@ function ensureRequestOwner(user, request) {
 
 module.exports = {
   getDirectReportIds,
+  getRequestApproverIds,
   buildRequestScope,
   canAccessRequest,
   ensureCanAccessRequest,
