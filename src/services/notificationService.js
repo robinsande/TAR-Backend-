@@ -214,6 +214,30 @@ async function notifyFlightBookingSuperAdmins(requestDocument) {
   );
 }
 
+async function resendTravelRequestNotifications(requestDocument) {
+  const requester = requestDocument.requestedBy;
+  const approverIds = requestDocument.selected_approver_ids?.length
+    ? requestDocument.selected_approver_ids
+    : [requestDocument.selected_approver_id];
+  const approvers = await User.find({
+    _id: { $in: approverIds },
+    role: "admin",
+    isActive: true,
+  }).select("-passwordHash");
+
+  const approvalNotifications = await Promise.all(
+    approvers.map((approver) =>
+      notifyTravelRequestUser(approver, "new_request", requestDocument, "approver", requester)
+    )
+  );
+  const flightNotifications = await notifyFlightBookingSuperAdmins(requestDocument);
+
+  return {
+    approvalCount: approvalNotifications.filter(Boolean).length,
+    flightBookingCount: flightNotifications.filter(Boolean).length,
+  };
+}
+
 async function notifyTravelRequestPassengers(requestDocument, type) {
   const passengers = await loadPassengerUsers(requestDocument);
   const requesterId = String(requestDocument.requestedBy?._id || requestDocument.requestedBy || "");
@@ -248,5 +272,6 @@ module.exports = {
   notifyTravelRequestUser,
   notifyTravelRequestPassengers,
   notifyFlightBookingSuperAdmins,
+  resendTravelRequestNotifications,
   notifyReimbursementUser,
 };

@@ -7,7 +7,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "test": "jest --runInBand",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "resend:travel-notifications": "node scripts/resendTravelRequestNotifications.js"
   },
   "repository": {
     "type": "git",
