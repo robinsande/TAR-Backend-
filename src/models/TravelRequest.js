@@ -79,6 +79,22 @@ const decisionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const attachmentSchema = new mongoose.Schema(
+  {
+    category: {
+      type: String,
+      enum: ["scope", "supporting"],
+      required: true,
+    },
+    originalName: { type: String, required: true, trim: true },
+    storageName: { type: String, required: true, trim: true },
+    mimeType: { type: String, required: true, trim: true },
+    size: { type: Number, required: true, min: 1 },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const historySchema = new mongoose.Schema(
   {
     snapshot: {
@@ -153,6 +169,10 @@ const travelRequestSchema = new mongoose.Schema(
     },
     passengers: {
       type: [passengerSchema],
+      default: [],
+    },
+    attachments: {
+      type: [attachmentSchema],
       default: [],
     },
     status: {

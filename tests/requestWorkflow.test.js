@@ -294,6 +294,48 @@ describe("request scoping and workflow", () => {
     expect(requesterNotification.message).not.toContain("listed as a passenger");
   });
 
+  it("lets the requester upload and authorized users download separate TAR documents", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager-documents@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester-documents@example.com",
+      managerId: manager._id,
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
+
+    const uploadResponse = await request(app)
+      .post(`/api/requests/${createResponse.body._id}/attachments`)
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .attach("scopeDocuments", Buffer.from("scope document"), "scope.txt")
+      .attach("supportingDocuments", Buffer.from("supporting document"), "supporting.txt");
+
+    expect(uploadResponse.status).toBe(201);
+    expect(uploadResponse.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "scope", originalName: "scope.txt" }),
+        expect.objectContaining({ category: "supporting", originalName: "supporting.txt" }),
+      ])
+    );
+
+    const scopeAttachment = uploadResponse.body.find((attachment) => attachment.category === "scope");
+    const managerToken = await login(manager.email);
+    const downloadResponse = await request(app)
+      .get(`/api/requests/${createResponse.body._id}/attachments/${scopeAttachment._id}`)
+      .set("Authorization", `Bearer ${managerToken}`);
+
+    expect(downloadResponse.status).toBe(200);
+    expect(downloadResponse.text).toBe("scope document");
+  });
+
   it("shows existing requests to a recreated manager with the same email", async () => {
     const oldManager = await createUser({
       name: "Original Manager",

@@ -1,5 +1,6 @@
 const TravelRequest = require("../models/TravelRequest");
 const User = require("../models/User");
+const path = require("path");
 const HttpError = require("../utils/httpError");
 const {
   notifyTravelRequestUser,
@@ -10,6 +11,7 @@ const { createAuditLog } = require("../services/auditLogService");
 const { getEligibleApproverById, resolveManagerApproverForUser } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
+const { uploadDirectory } = require("../middleware/requestUpload");
 const {
   ensureCanAccessRequest,
   ensureApprover,
@@ -167,6 +169,53 @@ async function getRequestById(req, res) {
   await ensureCanAccessRequest(req.user, requestDocument);
 
   return res.json(requestDocument);
+}
+
+async function uploadRequestAttachments(req, res) {
+  const requestDocument = await TravelRequest.findById(req.params.id);
+  if (!requestDocument) {
+    throw new HttpError(404, "Travel request not found");
+  }
+
+  ensureRequestOwner(req.user, requestDocument);
+  const files = [
+    ...(req.files?.scopeDocuments || []).map((file) => ({ file, category: "scope" })),
+    ...(req.files?.supportingDocuments || []).map((file) => ({ file, category: "supporting" })),
+  ];
+
+  if (!files.length) {
+    throw new HttpError(400, "Select at least one document to upload");
+  }
+
+  requestDocument.attachments.push(
+    ...files.map(({ file, category }) => ({
+      category,
+      originalName: file.originalname,
+      storageName: file.filename,
+      mimeType: file.mimetype || "application/octet-stream",
+      size: file.size,
+    }))
+  );
+  await requestDocument.save();
+  return res.status(201).json(requestDocument.attachments);
+}
+
+async function downloadRequestAttachment(req, res) {
+  const requestDocument = await TravelRequest.findById(req.params.id);
+  if (!requestDocument) {
+    throw new HttpError(404, "Travel request not found");
+  }
+
+  await ensureCanAccessRequest(req.user, requestDocument);
+  const attachment = requestDocument.attachments.id(req.params.attachmentId);
+  if (!attachment) {
+    throw new HttpError(404, "Attachment not found");
+  }
+
+  return res.download(
+    path.join(uploadDirectory, attachment.storageName),
+    attachment.originalName
+  );
 }
 
 async function approveRequest(req, res) {
@@ -373,6 +422,8 @@ module.exports = {
   listRequests,
   remindApprover,
   getRequestById,
+  uploadRequestAttachments,
+  downloadRequestAttachment,
   approveRequest,
   rejectRequest,
   resubmitRequest,

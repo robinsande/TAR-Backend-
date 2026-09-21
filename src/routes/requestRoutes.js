@@ -3,6 +3,7 @@ const asyncHandler = require("../utils/asyncHandler");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 const { scopeRequestQuery } = require("../middleware/requestScopeMiddleware");
 const { validationErrorHandler } = require("../middleware/errorHandler");
+const { uploadRequestAttachments } = require("../middleware/requestUpload");
 const {
   createTravelRequestValidator,
   resubmitTravelRequestValidator,
@@ -18,6 +19,8 @@ const {
   rejectRequest,
   resubmitRequest,
   getPendingMyApproval,
+  uploadRequestAttachments: saveRequestAttachments,
+  downloadRequestAttachment,
 } = require("../controllers/requestController");
 
 const router = express.Router();
@@ -40,6 +43,20 @@ router.post(
 
 router.get("/", scopeRequestQuery, asyncHandler(listRequests));
 router.get("/:id", asyncHandler(getRequestById));
+
+router.post(
+  "/:id/attachments",
+  uploadRequestAttachments.fields([
+    { name: "scopeDocuments", maxCount: 5 },
+    { name: "supportingDocuments", maxCount: 5 },
+  ]),
+  asyncHandler(saveRequestAttachments)
+);
+
+router.get(
+  "/:id/attachments/:attachmentId",
+  asyncHandler(downloadRequestAttachment)
+);
 
 router.post(
   "/:id/remind-approver",
