@@ -123,6 +123,39 @@ describe("authentication and authorization", () => {
   });
 });
 
+describe("user profile updates", () => {
+  it("preserves a designated manager stored by name and email when managerId is omitted", async () => {
+    const superadmin = await createUser({
+      name: "Super Admin",
+      email: "superadmin-profile@example.com",
+      role: "superadmin",
+    });
+    const user = await createUser({
+      name: "Profile User",
+      email: "profile-user@example.com",
+      managerName: "Imported Manager",
+      managerEmail: "imported-manager@example.com",
+    });
+    const token = await login(superadmin.email);
+
+    const response = await request(app)
+      .patch(`/api/users/${user._id}/profile`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Updated Profile User",
+        email: user.email,
+        department: "Programs",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.managerName).toBe("Imported Manager");
+    expect(response.body.managerEmail).toBe("imported-manager@example.com");
+    const savedUser = await User.findById(user._id);
+    expect(savedUser.managerName).toBe("Imported Manager");
+    expect(savedUser.managerEmail).toBe("imported-manager@example.com");
+  });
+});
+
 describe("request scoping and workflow", () => {
   it("lets passengers see travel requests raised for them", async () => {
     const manager = await createUser({
