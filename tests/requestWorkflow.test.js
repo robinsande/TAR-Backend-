@@ -382,11 +382,10 @@ describe("request scoping and workflow", () => {
     const approverEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "New travel request awaiting approval"
     );
-    expect(approverEmails).toHaveLength(2);
-    approverEmails.forEach(([, , , options]) => {
-      expect(options.from).toBeUndefined();
-      expect(options.replyTo).toBe(requester.email);
-    });
+    expect(approverEmails).toHaveLength(1);
+    expect(approverEmails[0][0]).toBe(manager.email);
+    expect(approverEmails[0][3].from).toBeUndefined();
+    expect(approverEmails[0][3].replyTo).toBe(requester.email);
   });
 
   it("emails the selected approver when the requester sends a reminder", async () => {

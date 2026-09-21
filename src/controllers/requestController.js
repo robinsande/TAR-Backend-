@@ -4,6 +4,7 @@ const path = require("path");
 const HttpError = require("../utils/httpError");
 const {
   notifyTravelRequestUser,
+  notifyTravelRequestApprover,
   notifyTravelRequestPassengers,
   notifyFlightBookingSuperAdmins,
 } = require("../services/notificationService");
@@ -91,11 +92,7 @@ async function createRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
-  await Promise.all(
-    approvers.map((approver) =>
-      notifyTravelRequestUser(approver, "new_request", requestDocument, "approver", requester)
-    )
-  );
+  await notifyTravelRequestApprover(requestDocument, "new_request", requester);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -333,11 +330,7 @@ async function resubmitRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "resubmitted");
-  await Promise.all(
-    approvers.map((approver) =>
-      notifyTravelRequestUser(approver, "resubmitted", requestDocument, "approver", requestDocument.requestedBy)
-    )
-  );
+  await notifyTravelRequestApprover(requestDocument, "resubmitted", requestDocument.requestedBy);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 

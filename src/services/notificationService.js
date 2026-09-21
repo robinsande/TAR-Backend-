@@ -186,21 +186,14 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
   });
 }
 
-async function notifyTravelRequestApprovers(requestDocument, type, requester = null) {
-  const approverIds = requestDocument.selected_approver_ids?.length
-    ? requestDocument.selected_approver_ids
-    : [requestDocument.selected_approver_id];
-  const approvers = await User.find({
-    _id: { $in: approverIds.filter(Boolean) },
+async function notifyTravelRequestApprover(requestDocument, type, requester = null) {
+  const approver = await User.findOne({
+    _id: requestDocument.selected_approver_id?._id || requestDocument.selected_approver_id,
     role: "admin",
     isActive: true,
   }).select("-passwordHash");
 
-  return Promise.all(
-    approvers.map((approver) =>
-      notifyTravelRequestUser(approver, type, requestDocument, "approver", requester)
-    )
-  );
+  return notifyTravelRequestUser(approver, type, requestDocument, "approver", requester);
 }
 
 async function notifyFlightBookingSuperAdmins(requestDocument) {
@@ -232,7 +225,7 @@ async function notifyFlightBookingSuperAdmins(requestDocument) {
 
 async function resendTravelRequestNotifications(requestDocument) {
   const requester = requestDocument.requestedBy;
-  const approvalNotifications = await notifyTravelRequestApprovers(
+  const approvalNotification = await notifyTravelRequestApprover(
     requestDocument,
     "new_request",
     requester
@@ -240,7 +233,7 @@ async function resendTravelRequestNotifications(requestDocument) {
   const flightNotifications = await notifyFlightBookingSuperAdmins(requestDocument);
 
   return {
-    approvalCount: approvalNotifications.filter(Boolean).length,
+    approvalCount: approvalNotification ? 1 : 0,
     flightBookingCount: flightNotifications.filter(Boolean).length,
   };
 }
@@ -277,7 +270,7 @@ async function notifyReimbursementUser(recipient, type, report) {
 
 module.exports = {
   notifyTravelRequestUser,
-  notifyTravelRequestApprovers,
+  notifyTravelRequestApprover,
   notifyTravelRequestPassengers,
   notifyFlightBookingSuperAdmins,
   resendTravelRequestNotifications,
