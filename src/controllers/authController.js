@@ -22,11 +22,15 @@ function buildAuthUserResponse(user) {
 }
 
 async function login(req, res) {
+  const startedAt = performance.now();
   const { email, password } = req.body;
 
+  const lookupStartedAt = performance.now();
   const user = await User.findOne({ email: email.toLowerCase() });
+  const lookupMs = performance.now() - lookupStartedAt;
 
   if (!user || !user.passwordHash) {
+    res.setHeader("Server-Timing", `user-lookup;dur=${lookupMs.toFixed(1)}`);
     throw new HttpError(401, "Invalid email or password");
   }
 
@@ -44,16 +48,28 @@ async function login(req, res) {
     throw new HttpError(403, "This temporary password has expired. Contact a superadmin for a new account password.");
   }
 
+  const passwordStartedAt = performance.now();
   const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+  const passwordMs = performance.now() - passwordStartedAt;
 
   if (!passwordMatches) {
+    res.setHeader(
+      "Server-Timing",
+      `user-lookup;dur=${lookupMs.toFixed(1)}, password;dur=${passwordMs.toFixed(1)}`
+    );
     throw new HttpError(401, "Invalid email or password");
   }
 
+  const tokenStartedAt = performance.now();
   const token = signToken({
     userId: user._id.toString(),
     role: user.role,
   });
+  const tokenMs = performance.now() - tokenStartedAt;
+  res.setHeader(
+    "Server-Timing",
+    `user-lookup;dur=${lookupMs.toFixed(1)}, password;dur=${passwordMs.toFixed(1)}, token;dur=${tokenMs.toFixed(1)}, auth-total;dur=${(performance.now() - startedAt).toFixed(1)}`
+  );
 
   return res.json({
     token,
