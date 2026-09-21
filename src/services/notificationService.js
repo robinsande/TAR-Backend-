@@ -186,6 +186,23 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
   });
 }
 
+async function notifyTravelRequestApprovers(requestDocument, type, requester = null) {
+  const approverIds = requestDocument.selected_approver_ids?.length
+    ? requestDocument.selected_approver_ids
+    : [requestDocument.selected_approver_id];
+  const approvers = await User.find({
+    _id: { $in: approverIds.filter(Boolean) },
+    role: "admin",
+    isActive: true,
+  }).select("-passwordHash");
+
+  return Promise.all(
+    approvers.map((approver) =>
+      notifyTravelRequestUser(approver, type, requestDocument, "approver", requester)
+    )
+  );
+}
+
 async function notifyFlightBookingSuperAdmins(requestDocument) {
   if (
     requestDocument.status !== "approved" ||
@@ -215,19 +232,10 @@ async function notifyFlightBookingSuperAdmins(requestDocument) {
 
 async function resendTravelRequestNotifications(requestDocument) {
   const requester = requestDocument.requestedBy;
-  const approverIds = requestDocument.selected_approver_ids?.length
-    ? requestDocument.selected_approver_ids
-    : [requestDocument.selected_approver_id];
-  const approvers = await User.find({
-    _id: { $in: approverIds },
-    role: "admin",
-    isActive: true,
-  }).select("-passwordHash");
-
-  const approvalNotifications = await Promise.all(
-    approvers.map((approver) =>
-      notifyTravelRequestUser(approver, "new_request", requestDocument, "approver", requester)
-    )
+  const approvalNotifications = await notifyTravelRequestApprovers(
+    requestDocument,
+    "new_request",
+    requester
   );
   const flightNotifications = await notifyFlightBookingSuperAdmins(requestDocument);
 
@@ -269,6 +277,7 @@ async function notifyReimbursementUser(recipient, type, report) {
 
 module.exports = {
   notifyTravelRequestUser,
+  notifyTravelRequestApprovers,
   notifyTravelRequestPassengers,
   notifyFlightBookingSuperAdmins,
   resendTravelRequestNotifications,

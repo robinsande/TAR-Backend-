@@ -389,6 +389,48 @@ describe("request scoping and workflow", () => {
     });
   });
 
+  it("emails every selected approver when the requester sends a reminder", async () => {
+    sendEmail.mockClear();
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager-reminder@example.com",
+      role: "admin",
+    });
+    const secondApprover = await createUser({
+      name: "Second Approver",
+      email: "second-reminder@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester-reminder@example.com",
+      managerId: manager._id,
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(buildRequestPayload(manager._id, {
+        selected_approver_ids: [manager._id.toString(), secondApprover._id.toString()],
+        passengers: [passengerFor(requester)],
+      }));
+
+    sendEmail.mockClear();
+    const reminderResponse = await request(app)
+      .post(`/api/requests/${createResponse.body._id}/remind-approver`)
+      .set("Authorization", `Bearer ${requesterToken}`);
+
+    expect(reminderResponse.status).toBe(200);
+    const reminderEmails = sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "Reminder: travel request awaiting your approval"
+    );
+    expect(reminderEmails.map(([recipient]) => recipient).sort()).toEqual([
+      manager.email,
+      secondApprover.email,
+    ].sort());
+  });
+
   it("shows existing requests to a recreated manager with the same email", async () => {
     const oldManager = await createUser({
       name: "Original Manager",
