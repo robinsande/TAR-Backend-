@@ -560,10 +560,10 @@ function buildTravelRequestPdf(res, requestDocument) {
         { width: 0.10, value: `Date:\n${formatDate(requestDocument.decision?.decidedAt || requestDocument.submittedAt)}` },
       ], height: 54 },
       { cells: [
-        { width: 1, value: "To be signed by supervisor once all is completed", align: "center" },
+        { width: 1, value: "To be signed by supervisor once all is completed", align: "center", color: "#000000" },
       ], height: 25 },
       { cells: [
-        { width: 1, value: "Note: This form must be produced in 3 or 4 copies BEFORE travel is undertaken. The signed original is to be submitted to the Finance Unit when seeking an advance or claiming reimbursement, another photocopy provided to the Security Officer and the Fleet Officer if requesting a CARE vehicle for travel, and the third copy for employee’s records/file.", size: 7 },
+        { width: 1, value: "Note: This form must be produced in 3 or 4 copies BEFORE travel is undertaken. The signed original is to be submitted to the Finance Unit when seeking an advance or claiming reimbursement, another photocopy provided to the Security Officer and the Fleet Officer if requesting a CARE vehicle for travel, and the third copy for employee’s records/file.", size: 7, color: "#000000" },
       ], height: 52 },
     ]);
 
