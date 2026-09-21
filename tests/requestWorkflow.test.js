@@ -389,7 +389,7 @@ describe("request scoping and workflow", () => {
     });
   });
 
-  it("emails every selected approver when the requester sends a reminder", async () => {
+  it("emails the selected approver when the requester sends a reminder", async () => {
     sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
@@ -425,10 +425,8 @@ describe("request scoping and workflow", () => {
     const reminderEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "Reminder: travel request awaiting your approval"
     );
-    expect(reminderEmails.map(([recipient]) => recipient).sort()).toEqual([
-      manager.email,
-      secondApprover.email,
-    ].sort());
+    expect(reminderEmails).toHaveLength(1);
+    expect(reminderEmails[0][0]).toBe(manager.email);
   });
 
   it("shows existing requests to a recreated manager with the same email", async () => {

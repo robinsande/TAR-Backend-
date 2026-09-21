@@ -4,7 +4,6 @@ const path = require("path");
 const HttpError = require("../utils/httpError");
 const {
   notifyTravelRequestUser,
-  notifyTravelRequestApprovers,
   notifyTravelRequestPassengers,
   notifyFlightBookingSuperAdmins,
 } = require("../services/notificationService");
@@ -132,9 +131,11 @@ async function remindApprover(req, res) {
     throw new HttpError(400, "Only pending requests can be reminded");
   }
 
-  await notifyTravelRequestApprovers(
-    requestDocument,
+  await notifyTravelRequestUser(
+    requestDocument.selected_approver_id,
     "approval_reminder",
+    requestDocument,
+    "approver",
     requestDocument.requestedBy
   );
 
