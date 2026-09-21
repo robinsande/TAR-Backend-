@@ -464,7 +464,8 @@ describe("request scoping and workflow", () => {
     expect(listResponse.body.data.map((item) => item._id)).toContain(createResponse.body._id);
   });
 
-  it("notifies active superadmins to book flights only after an aircraft TAR is approved", async () => {
+  it("emails every active superadmin about any approved TAR for travel arrangements", async () => {
+    sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
       email: "manager@example.com",
@@ -473,6 +474,11 @@ describe("request scoping and workflow", () => {
     const superadmin = await createUser({
       name: "Travel Desk",
       email: "travel-desk@example.com",
+      role: "superadmin",
+    });
+    const secondSuperadmin = await createUser({
+      name: "Travel Desk Backup",
+      email: "travel-desk-backup@example.com",
       role: "superadmin",
     });
     const requester = await createUser({
@@ -487,7 +493,7 @@ describe("request scoping and workflow", () => {
       .set("Authorization", `Bearer ${requesterToken}`)
       .send(
         buildRequestPayload(manager._id, {
-          modeOfTravel: { careVehicle: false, publicTransport: false, aircraft: true },
+          modeOfTravel: { careVehicle: true, publicTransport: false, aircraft: false },
           passengers: [passengerFor(requester)],
         })
       );
@@ -495,6 +501,12 @@ describe("request scoping and workflow", () => {
     expect(
       await Notification.countDocuments({
         recipient: superadmin._id,
+        type: "flight_booking_required",
+      })
+    ).toBe(0);
+    expect(
+      await Notification.countDocuments({
+        recipient: secondSuperadmin._id,
         type: "flight_booking_required",
       })
     ).toBe(0);
@@ -513,6 +525,21 @@ describe("request scoping and workflow", () => {
         request: createResponse.body._id,
       })
     ).toBe(1);
+    expect(
+      await Notification.countDocuments({
+        recipient: secondSuperadmin._id,
+        type: "flight_booking_required",
+        request: createResponse.body._id,
+      })
+    ).toBe(1);
+
+    const arrangementEmails = sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "Flight booking required for approved TAR"
+    );
+    expect(arrangementEmails.map(([recipient]) => recipient).sort()).toEqual([
+      superadmin.email,
+      secondSuperadmin.email,
+    ].sort());
   });
 
   it("stores history and resets status when a rejected request is resubmitted", async () => {

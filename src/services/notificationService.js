@@ -197,10 +197,7 @@ async function notifyTravelRequestApprover(requestDocument, type, requester = nu
 }
 
 async function notifyFlightBookingSuperAdmins(requestDocument) {
-  if (
-    requestDocument.status !== "approved" ||
-    !requestDocument.modeOfTravel?.aircraft
-  ) {
+  if (requestDocument.status !== "approved") {
     return [];
   }
 
