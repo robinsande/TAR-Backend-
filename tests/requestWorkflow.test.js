@@ -384,7 +384,7 @@ describe("request scoping and workflow", () => {
     );
     expect(approverEmails).toHaveLength(2);
     approverEmails.forEach(([, , , options]) => {
-      expect(options.from).toBe(requester.email);
+      expect(options.from).toBeUndefined();
       expect(options.replyTo).toBe(requester.email);
     });
   });

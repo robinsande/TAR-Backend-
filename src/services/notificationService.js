@@ -181,7 +181,6 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
     subject: content.subject,
     requestId: requestDocument._id,
     replyTo: ["approver", "flight_booking"].includes(audience) ? requesterEmail : null,
-    from: ["approver", "flight_booking"].includes(audience) ? requesterEmail : null,
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });
