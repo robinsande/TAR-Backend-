@@ -10,6 +10,7 @@ const createApp = require("../src/app");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
 const Notification = require("../src/models/Notification");
+const { sendEmail } = require("../src/services/emailService");
 const { hashPassword } = require("../src/services/passwordService");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
@@ -337,6 +338,7 @@ describe("request scoping and workflow", () => {
   });
 
   it("allows any selected per-request approver to approve the TAR", async () => {
+    sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
       email: "manager-multiple@example.com",
@@ -376,6 +378,15 @@ describe("request scoping and workflow", () => {
     expect(pendingResponse.status).toBe(200);
     expect(pendingResponse.body[0]._id).toBe(createResponse.body._id);
     expect(approveResponse.status).toBe(200);
+
+    const approverEmails = sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "New travel request awaiting approval"
+    );
+    expect(approverEmails).toHaveLength(2);
+    approverEmails.forEach(([, , , options]) => {
+      expect(options.from).toBe(requester.email);
+      expect(options.replyTo).toBe(requester.email);
+    });
   });
 
   it("shows existing requests to a recreated manager with the same email", async () => {
