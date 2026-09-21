@@ -534,7 +534,7 @@ describe("request scoping and workflow", () => {
     ).toBe(1);
 
     const arrangementEmails = sendEmail.mock.calls.filter(([, subject]) =>
-      subject === "Flight booking required for approved TAR"
+      subject === "Approved TAR requires travel arrangements"
     );
     expect(arrangementEmails.map(([recipient]) => recipient).sort()).toEqual([
       superadmin.email,
@@ -551,7 +551,7 @@ describe("request scoping and workflow", () => {
     expect(resendResponse.body.requests).toBe(1);
     expect(resendResponse.body.emailCount).toBe(2);
     expect(sendEmail.mock.calls.filter(([, subject]) =>
-      subject === "Flight booking required for approved TAR"
+      subject === "Approved TAR requires travel arrangements"
     )).toHaveLength(2);
   });
 

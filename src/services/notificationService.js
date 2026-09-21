@@ -97,8 +97,8 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
   switch (type) {
     case "flight_booking_required":
       return {
-        subject: "Flight booking required for approved TAR",
-        message: `${requesterLabel} has an approved TAR for ${destination} for ${purpose}. Please arrange the required flight booking and reply to the requester if more information is needed.`,
+        subject: "Approved TAR requires travel arrangements",
+        message: `${requesterLabel} has an approved TAR for ${destination} for ${purpose}. Please review the request and arrange the required travel, then reply to the requester if more information is needed.`,
       };
     case "approval_reminder":
       return {
