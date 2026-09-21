@@ -47,6 +47,18 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
       ? `${requestDocument.requestedBy.name || "A staff member"} (${requestDocument.requestedBy.email})`
       : "A staff member";
 
+  if (audience === "requester") {
+    switch (type) {
+      case "new_request":
+        return {
+          subject: "Travel request submitted",
+          message: `Your travel request to ${destination} for ${purpose} was submitted and is awaiting approval.`,
+        };
+      default:
+        break;
+    }
+  }
+
   if (audience === "passenger") {
     switch (type) {
       case "new_request":
@@ -199,11 +211,13 @@ async function notifyFlightBookingSuperAdmins(requestDocument) {
 
 async function notifyTravelRequestPassengers(requestDocument, type) {
   const passengers = await loadPassengerUsers(requestDocument);
+  const requesterId = String(requestDocument.requestedBy?._id || requestDocument.requestedBy || "");
   const results = [];
 
   for (const passenger of passengers) {
+    const audience = String(passenger._id) === requesterId ? "requester" : "passenger";
     results.push(
-      await notifyTravelRequestUser(passenger, type, requestDocument, "passenger")
+      await notifyTravelRequestUser(passenger, type, requestDocument, audience)
     );
   }
 

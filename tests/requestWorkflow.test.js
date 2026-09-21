@@ -284,6 +284,14 @@ describe("request scoping and workflow", () => {
     expect(approveResponse.body.status).toBe("approved");
     expect(approveResponse.body.decision.comment).toBeNull();
     expect(approveResponse.body.decision.signature).toBe("Manager Signature");
+
+    const requesterNotification = await Notification.findOne({
+      recipient: requester._id,
+      type: "new_request",
+      request: createResponse.body._id,
+    });
+    expect(requesterNotification.message).toContain("Your travel request");
+    expect(requesterNotification.message).not.toContain("listed as a passenger");
   });
 
   it("notifies active superadmins to book flights only after an aircraft TAR is approved", async () => {
