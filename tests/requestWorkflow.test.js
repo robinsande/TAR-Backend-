@@ -540,6 +540,19 @@ describe("request scoping and workflow", () => {
       superadmin.email,
       secondSuperadmin.email,
     ].sort());
+
+    sendEmail.mockClear();
+    const superadminToken = await login(superadmin.email);
+    const resendResponse = await request(app)
+      .post("/api/admin/resend-approved-tar-notifications")
+      .set("Authorization", `Bearer ${superadminToken}`);
+
+    expect(resendResponse.status).toBe(200);
+    expect(resendResponse.body.requests).toBe(1);
+    expect(resendResponse.body.emailCount).toBe(2);
+    expect(sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "Flight booking required for approved TAR"
+    )).toHaveLength(2);
   });
 
   it("stores history and resets status when a rejected request is resubmitted", async () => {

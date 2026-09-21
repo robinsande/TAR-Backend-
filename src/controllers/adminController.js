@@ -1,6 +1,8 @@
 const multer = require("multer");
 const path = require("path");
 const { importEmployeesFromBuffer } = require("../services/employeeImportService");
+const TravelRequest = require("../models/TravelRequest");
+const { notifyFlightBookingSuperAdmins } = require("../services/notificationService");
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -31,7 +33,26 @@ async function importEmployees(req, res) {
   });
 }
 
+async function resendApprovedTarNotifications(req, res) {
+  const requests = await TravelRequest.find({ status: "approved" })
+    .populate("requestedBy", "name email")
+    .sort({ createdAt: 1 });
+  let emailCount = 0;
+
+  for (const request of requests) {
+    const notifications = await notifyFlightBookingSuperAdmins(request);
+    emailCount += notifications.filter(Boolean).length;
+  }
+
+  return res.json({
+    message: "Approved TAR notifications resent",
+    requests: requests.length,
+    emailCount,
+  });
+}
+
 module.exports = {
   upload,
   importEmployees,
+  resendApprovedTarNotifications,
 };
