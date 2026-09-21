@@ -12,10 +12,13 @@ function idToString(value) {
   return value._id ? value._id.toString() : value.toString();
 }
 
-async function listEligiblePassengers() {
+async function listEligiblePassengers(requesterId) {
   return User.find({
     isActive: true,
-    role: { $in: ["user", "admin"] },
+    $or: [
+      { role: { $in: ["user", "admin"] } },
+      { _id: requesterId, role: "superadmin" },
+    ],
   })
     .select(PASSENGER_SELECT)
     .sort({ name: 1 });

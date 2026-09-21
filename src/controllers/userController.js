@@ -304,7 +304,7 @@ async function listApprovers(req, res) {
 }
 
 async function listPassengers(req, res) {
-  const passengers = await listEligiblePassengers();
+  const passengers = await listEligiblePassengers(req.user.id);
   return res.json(passengers);
 }
 

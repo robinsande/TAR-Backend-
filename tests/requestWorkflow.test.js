@@ -535,6 +535,51 @@ describe("request scoping and workflow", () => {
     expect(response.body[0]).not.toHaveProperty("passwordHash");
   });
 
+  it("includes a superadmin requester but excludes other superadmins", async () => {
+    const requester = await createUser({
+      name: "Superadmin Requester",
+      email: "superadmin-requester@example.com",
+      role: "superadmin",
+    });
+    const otherSuperadmin = await createUser({
+      name: "Other Superadmin",
+      email: "other-superadmin@example.com",
+      role: "superadmin",
+    });
+
+    const token = await login(requester.email);
+    const response = await request(app)
+      .get("/api/users/passengers")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.map((user) => user._id)).toContain(requester._id.toString());
+    expect(response.body.map((user) => user._id)).not.toContain(otherSuperadmin._id.toString());
+  });
+
+  it("allows a superadmin to create a request as the first passenger", async () => {
+    const approver = await createUser({
+      name: "Approver Admin",
+      email: "approver-for-superadmin@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Superadmin Requester",
+      email: "requester-superadmin@example.com",
+      role: "superadmin",
+    });
+
+    const token = await login(requester.email);
+    const response = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${token}`)
+      .send(buildRequestPayload(approver._id, { passengers: [passengerFor(requester)] }));
+
+    expect(response.status).toBe(201);
+    expect(response.body.requestedBy._id).toBe(requester._id.toString());
+    expect(response.body.passengers[0].user._id).toBe(requester._id.toString());
+  });
+
   it("marks all notifications as read for the authenticated user", async () => {
     const manager = await createUser({
       name: "Manager Admin",
