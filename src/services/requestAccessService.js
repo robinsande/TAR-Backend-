@@ -10,8 +10,14 @@ function idToString(value) {
   return value._id ? value._id.toString() : value.toString();
 }
 
-async function getDirectReportIds(adminId) {
-  const directReports = await User.find({ managerId: adminId, isActive: true }).select("_id");
+async function getDirectReportIds(adminId, adminEmail = null) {
+  const directReports = await User.find({
+    isActive: true,
+    $or: [
+      { managerId: adminId },
+      ...(adminEmail ? [{ managerEmail: adminEmail.toLowerCase() }] : []),
+    ],
+  }).select("_id");
   return directReports.map((report) => report._id);
 }
 
@@ -42,7 +48,7 @@ async function buildRequestScope(user, listScope) {
   }
 
   if (user.role === "admin") {
-    const directReportIds = await getDirectReportIds(user.id);
+    const directReportIds = await getDirectReportIds(user.id, user.email);
 
     return {
       $or: [
@@ -75,7 +81,7 @@ async function canAccessRequest(user, request) {
       return true;
     }
 
-    const directReportIds = await getDirectReportIds(user.id);
+    const directReportIds = await getDirectReportIds(user.id, user.email);
     const reportIdSet = new Set(directReportIds.map((id) => id.toString()));
 
     if (reportIdSet.has(requesterId)) {

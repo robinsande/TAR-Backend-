@@ -294,6 +294,42 @@ describe("request scoping and workflow", () => {
     expect(requesterNotification.message).not.toContain("listed as a passenger");
   });
 
+  it("shows existing requests to a recreated manager with the same email", async () => {
+    const oldManager = await createUser({
+      name: "Original Manager",
+      email: "adama.mwangi@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester@example.com",
+      managerId: oldManager._id,
+      managerEmail: oldManager.email,
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(buildRequestPayload(oldManager._id, { passengers: [passengerFor(requester)] }));
+
+    await User.deleteOne({ _id: oldManager._id });
+    const recreatedManager = await createUser({
+      name: "Adama Mwangi",
+      email: oldManager.email,
+      role: "admin",
+    });
+
+    const managerToken = await login(recreatedManager.email);
+    const listResponse = await request(app)
+      .get("/api/requests")
+      .set("Authorization", `Bearer ${managerToken}`);
+
+    expect(createResponse.status).toBe(201);
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.data.map((item) => item._id)).toContain(createResponse.body._id);
+  });
+
   it("notifies active superadmins to book flights only after an aircraft TAR is approved", async () => {
     const manager = await createUser({
       name: "Manager Admin",
