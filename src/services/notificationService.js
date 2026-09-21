@@ -21,6 +21,7 @@ async function createAndSendNotification({
   requestId = null,
   reimbursementId = null,
   replyTo = null,
+  from = null,
   entityLabel,
   entityId,
 }) {
@@ -33,7 +34,11 @@ async function createAndSendNotification({
   });
 
   const html = buildNotificationEmail(recipient.name, message, entityLabel, entityId);
-  await sendEmail(recipient.email, subject, html, replyTo ? { replyTo } : undefined);
+  const emailOptions = {
+    ...(replyTo ? { replyTo } : {}),
+    ...(from ? { from } : {}),
+  };
+  await sendEmail(recipient.email, subject, html, emailOptions);
 
   return notification;
 }
@@ -167,6 +172,7 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
   }
 
   const content = buildTravelRequestNotificationContent(type, requestDocument, audience, requester);
+  const requesterEmail = requester?.email || requestDocument.requestedBy?.email || null;
 
   return createAndSendNotification({
     recipient,
@@ -174,9 +180,8 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
     message: content.message,
     subject: content.subject,
     requestId: requestDocument._id,
-    replyTo: ["approver", "flight_booking"].includes(audience)
-      ? requester?.email || requestDocument.requestedBy?.email
-      : null,
+    replyTo: ["approver", "flight_booking"].includes(audience) ? requesterEmail : null,
+    from: ["approver", "flight_booking"].includes(audience) ? requesterEmail : null,
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });
