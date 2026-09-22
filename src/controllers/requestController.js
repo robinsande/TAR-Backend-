@@ -13,6 +13,7 @@ const { getEligibleApproverById } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const { uploadDirectory } = require("../middleware/requestUpload");
+const { storeAttachment, streamAttachment } = require("../services/attachmentStorageService");
 const {
   ensureCanAccessRequest,
   ensureApprover,
@@ -192,15 +193,14 @@ async function uploadRequestAttachments(req, res) {
     throw new HttpError(400, "Select at least one document to upload");
   }
 
-  requestDocument.attachments.push(
-    ...files.map(({ file, category }) => ({
+  const storedAttachments = await Promise.all(files.map(async ({ file, category }) => ({
       category,
       originalName: file.originalname,
-      storageName: file.filename,
+      storageName: `gridfs:${await storeAttachment(file, { requestId: String(requestDocument._id), category })}`,
       mimeType: file.mimetype || "application/octet-stream",
       size: file.size,
-    }))
-  );
+    })));
+  requestDocument.attachments.push(...storedAttachments);
   await requestDocument.save();
   return res.status(201).json(requestDocument.attachments);
 }
@@ -218,6 +218,12 @@ async function downloadRequestAttachment(req, res) {
   }
 
   const filePath = path.join(uploadDirectory, attachment.storageName);
+  if (attachment.storageName.startsWith("gridfs:")) {
+    res.type(attachment.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `${req.query.view === "true" ? "inline" : "attachment"}; filename="${attachment.originalName.replace(/"/g, "")}"`);
+    return streamAttachment(attachment.storageName.slice("gridfs:".length), res);
+  }
+
   if (req.query.view === "true") {
     res.type(attachment.mimeType || "application/octet-stream");
     res.setHeader("Content-Disposition", `inline; filename="${attachment.originalName.replace(/"/g, "")}"`);
