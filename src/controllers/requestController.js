@@ -9,7 +9,7 @@ const {
   notifyFlightBookingSuperAdmins,
 } = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
-const { getEligibleApproverById, resolveManagerApproverForUser } = require("../services/approverService");
+const { getEligibleApproverById, listEligibleApprovers, resolveManagerApproverForUser } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const { uploadDirectory } = require("../middleware/requestUpload");
@@ -41,16 +41,17 @@ async function resolveApproversForRequest(approverIds, requesterId, passengers, 
   }
 
   const expectedApprover = await resolveManagerApproverForUser(requesterId);
-  if (!expectedApprover) {
-    throw new HttpError(
-      400,
-      requesterRole === "superadmin"
-        ? "Select an admin approver for this request"
-        : "This user has no valid manager approver assigned"
-    );
+  if (expectedApprover && !excludeUserIds.map(String).includes(String(expectedApprover._id))) {
+    return [await getEligibleApproverById(expectedApprover._id, { excludeUserIds })];
   }
 
-  return [await getEligibleApproverById(expectedApprover._id, { excludeUserIds })];
+  const fallbackApprover = (await listEligibleApprovers(requesterId))
+    .find((approver) => !excludeUserIds.map(String).includes(String(approver._id)));
+  if (!fallbackApprover) {
+    throw new HttpError(400, "No eligible active admin approver is available for this request");
+  }
+
+  return [await getEligibleApproverById(fallbackApprover._id, { excludeUserIds })];
 }
 
 async function createRequest(req, res) {
