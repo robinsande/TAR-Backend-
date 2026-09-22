@@ -22,6 +22,8 @@ const {
   getPendingMyApproval,
   uploadRequestAttachments: saveRequestAttachments,
   downloadRequestAttachment,
+  deleteRequestAttachment,
+  deleteRequest,
 } = require("../controllers/requestController");
 
 const router = express.Router();
@@ -59,6 +61,12 @@ router.get(
   asyncHandler(downloadRequestAttachment)
 );
 
+router.delete(
+  "/:id/attachments/:attachmentId",
+  requireRole("superadmin"),
+  asyncHandler(deleteRequestAttachment)
+);
+
 router.post(
   "/:id/remind-approver",
   requireRole("user", "admin", "superadmin"),
@@ -69,6 +77,12 @@ router.post(
   "/remind-pending",
   requireRole("superadmin"),
   asyncHandler(remindAllPendingApprovers)
+);
+
+router.delete(
+  "/:id",
+  requireRole("superadmin"),
+  asyncHandler(deleteRequest)
 );
 
 router.patch(

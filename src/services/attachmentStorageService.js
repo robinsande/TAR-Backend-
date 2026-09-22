@@ -28,7 +28,13 @@ function streamAttachment(storageId, res) {
   downloadStream.pipe(res);
 }
 
+async function deleteAttachment(storageId) {
+  const bucket = getBucket();
+  await bucket.delete(new mongoose.Types.ObjectId(storageId));
+}
+
 module.exports = {
   storeAttachment,
   streamAttachment,
+  deleteAttachment,
 };

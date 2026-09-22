@@ -13,7 +13,7 @@ const { getEligibleApproverById } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const { uploadDirectory } = require("../middleware/requestUpload");
-const { storeAttachment, streamAttachment } = require("../services/attachmentStorageService");
+const { storeAttachment, streamAttachment, deleteAttachment } = require("../services/attachmentStorageService");
 const {
   ensureCanAccessRequest,
   ensureApprover,
@@ -233,6 +233,34 @@ async function downloadRequestAttachment(req, res) {
   return res.download(filePath, attachment.originalName);
 }
 
+async function deleteRequestAttachment(req, res) {
+  if (req.user.role !== "superadmin") throw new HttpError(403, "Only superadmins can delete attachments");
+  const requestDocument = await TravelRequest.findById(req.params.id);
+  if (!requestDocument) throw new HttpError(404, "Travel request not found");
+  const attachment = requestDocument.attachments.id(req.params.attachmentId);
+  if (!attachment) throw new HttpError(404, "Attachment not found");
+
+  if (attachment.storageName.startsWith("gridfs:")) {
+    await deleteAttachment(attachment.storageName.slice("gridfs:".length));
+  }
+  requestDocument.attachments.pull(attachment._id);
+  await requestDocument.save();
+  return res.status(204).send();
+}
+
+async function deleteRequest(req, res) {
+  if (req.user.role !== "superadmin") throw new HttpError(403, "Only superadmins can delete TARs");
+  const requestDocument = await TravelRequest.findById(req.params.id);
+  if (!requestDocument) throw new HttpError(404, "Travel request not found");
+  for (const attachment of requestDocument.attachments) {
+    if (attachment.storageName.startsWith("gridfs:")) {
+      await deleteAttachment(attachment.storageName.slice("gridfs:".length));
+    }
+  }
+  await requestDocument.deleteOne();
+  return res.status(204).send();
+}
+
 async function approveRequest(req, res) {
   const requestDocument = await TravelRequest.findById(req.params.id).populate(
     "requestedBy",
@@ -446,6 +474,8 @@ module.exports = {
   getRequestById,
   uploadRequestAttachments,
   downloadRequestAttachment,
+  deleteRequestAttachment,
+  deleteRequest,
   approveRequest,
   rejectRequest,
   resubmitRequest,
