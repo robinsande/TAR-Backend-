@@ -15,6 +15,7 @@ const {
   listRequests,
   getRequestById,
   remindApprover,
+  remindAllPendingApprovers,
   approveRequest,
   rejectRequest,
   resubmitRequest,
@@ -62,6 +63,12 @@ router.post(
   "/:id/remind-approver",
   requireRole("user", "admin", "superadmin"),
   asyncHandler(remindApprover)
+);
+
+router.post(
+  "/remind-pending",
+  requireRole("superadmin"),
+  asyncHandler(remindAllPendingApprovers)
 );
 
 router.patch(

@@ -5,8 +5,10 @@ let transporter = null;
 
 function isEmailConfigured() {
   return Boolean(
-    env.brevoApiKey ||
-    (env.brevoSmtpUser && env.brevoSmtpKey)
+    env.emailFrom && (
+      env.brevoApiKey ||
+      (env.brevoSmtpUser && env.brevoSmtpKey)
+    )
   );
 }
 

@@ -187,13 +187,19 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
 }
 
 async function notifyTravelRequestApprover(requestDocument, type, requester = null) {
-  const approver = await User.findOne({
-    _id: requestDocument.selected_approver_id?._id || requestDocument.selected_approver_id,
+  const selectedIds = requestDocument.selected_approver_ids?.length
+    ? requestDocument.selected_approver_ids
+    : [requestDocument.selected_approver_id];
+  const approvers = await User.find({
+    _id: { $in: selectedIds.map((approver) => approver?._id || approver).filter(Boolean) },
     role: "admin",
     isActive: true,
   }).select("-passwordHash");
 
-  return notifyTravelRequestUser(approver, type, requestDocument, "approver", requester);
+  const notifications = await Promise.all(
+    approvers.map((approver) => notifyTravelRequestUser(approver, type, requestDocument, "approver", requester))
+  );
+  return notifications.length === 1 ? notifications[0] : notifications;
 }
 
 async function notifyFlightBookingSuperAdmins(requestDocument) {

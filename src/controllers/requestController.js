@@ -84,6 +84,9 @@ async function createRequest(req, res) {
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
   await notifyTravelRequestApprover(requestDocument, "new_request", requester);
+  if (!isPassengerOnRequest(requestDocument, requester)) {
+    await notifyTravelRequestUser(requester, "new_request", requestDocument, "requester");
+  }
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -132,6 +135,33 @@ async function remindApprover(req, res) {
   }
 
   return res.json({ message: "Reminder sent to the assigned approver" });
+}
+
+async function remindAllPendingApprovers(req, res) {
+  const requests = await TravelRequest.find({ status: "pending" })
+    .populate("requestedBy", "name email")
+    .select("requestedBy selected_approver_id selected_approver_ids itinerary purposeOfTrip status");
+  const results = { total: requests.length, sent: 0, failed: 0, skipped: 0 };
+
+  for (const requestDocument of requests) {
+    let notifications;
+    try {
+      notifications = await notifyTravelRequestApprover(
+        requestDocument,
+        "approval_reminder",
+        requestDocument.requestedBy
+      );
+    } catch {
+      results.failed += 1;
+      continue;
+    }
+    const sent = Array.isArray(notifications) ? notifications.filter(Boolean).length : Number(Boolean(notifications));
+    if (!sent) results.skipped += 1;
+    else if (sent === (requestDocument.selected_approver_ids?.length || 1)) results.sent += sent;
+    else results.failed += 1;
+  }
+
+  return res.json(results);
 }
 
 async function getRequestById(req, res) {
@@ -187,10 +217,14 @@ async function downloadRequestAttachment(req, res) {
     throw new HttpError(404, "Attachment not found");
   }
 
-  return res.download(
-    path.join(uploadDirectory, attachment.storageName),
-    attachment.originalName
-  );
+  const filePath = path.join(uploadDirectory, attachment.storageName);
+  if (req.query.view === "true") {
+    res.type(attachment.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${attachment.originalName.replace(/"/g, "")}"`);
+    return res.sendFile(filePath);
+  }
+
+  return res.download(filePath, attachment.originalName);
 }
 
 async function approveRequest(req, res) {
@@ -402,6 +436,7 @@ module.exports = {
   createRequest,
   listRequests,
   remindApprover,
+  remindAllPendingApprovers,
   getRequestById,
   uploadRequestAttachments,
   downloadRequestAttachment,

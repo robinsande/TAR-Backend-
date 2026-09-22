@@ -9,6 +9,8 @@ function getHealth(req, res) {
     apiBase: "/api",
     frontendUrl: env.frontendUrl,
     emailConfigured: isEmailConfigured(),
+    emailSenderConfigured: Boolean(env.emailFrom),
+    emailProvider: env.brevoApiKey ? "brevo-api" : env.brevoSmtpUser && env.brevoSmtpKey ? "brevo-smtp" : null,
   });
 }
 
