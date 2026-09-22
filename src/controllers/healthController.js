@@ -1,4 +1,5 @@
 const env = require("../config/env");
+const { isEmailConfigured } = require("../services/emailService");
 
 function getHealth(req, res) {
   res.json({
@@ -7,6 +8,7 @@ function getHealth(req, res) {
     timestamp: new Date().toISOString(),
     apiBase: "/api",
     frontendUrl: env.frontendUrl,
+    emailConfigured: isEmailConfigured(),
   });
 }
 
