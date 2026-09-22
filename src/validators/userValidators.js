@@ -14,12 +14,12 @@ const createUserValidator = [
   optionalText("position", "Position must be text"),
   optionalText("office", "Office must be text"),
   optionalText("department", "Department must be text"),
-  body("role").optional().isIn(["user", "admin", "superadmin"]).withMessage("Invalid user role"),
+  body("role").optional().isIn(["user", "admin", "superadmin", "super_superadmin"]).withMessage("Invalid user role"),
 ];
 
 const updateUserRoleValidator = [
   ...userIdParamValidator,
-  body("role").isIn(["user", "admin", "superadmin"]).withMessage("Invalid user role"),
+  body("role").isIn(["user", "admin", "superadmin", "super_superadmin"]).withMessage("Invalid user role"),
 ];
 
 const updateUserProfileValidator = [

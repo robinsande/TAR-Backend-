@@ -107,11 +107,11 @@ async function createUser(req, res) {
   const requestedRole = req.body.role || "user";
 
   const role = req.user.role === "admin" ? "user" : requestedRole;
-  if (!["user", "admin", "superadmin"].includes(role)) {
-    throw new HttpError(400, "Role must be user, admin, or superadmin");
+  if (!["user", "admin", "superadmin", "super_superadmin"].includes(role)) {
+    throw new HttpError(400, "Role must be user, admin, superadmin, or super_superadmin");
   }
-  if (role === "superadmin" && req.user.role !== "superadmin") {
-    throw new HttpError(403, "Only a superadmin can create a superadmin account");
+  if (["superadmin", "super_superadmin"].includes(role) && req.user.role !== "superadmin") {
+    throw new HttpError(403, "Only a superadmin can create elevated accounts");
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -311,8 +311,8 @@ async function sendBulkInvitations(req, res) {
 async function updateUserRole(req, res) {
   const { role } = req.body;
 
-  if (!["user", "admin", "superadmin"].includes(role)) {
-    throw new HttpError(400, "Role must be user, admin, or superadmin");
+  if (!["user", "admin", "superadmin", "super_superadmin"].includes(role)) {
+    throw new HttpError(400, "Role must be user, admin, superadmin, or super_superadmin");
   }
 
   if (req.params.id === req.user.id) {
