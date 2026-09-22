@@ -46,8 +46,18 @@ async function markAllNotificationsRead(req, res) {
   });
 }
 
+async function clearNotifications(req, res) {
+  const result = await Notification.deleteMany({ recipient: req.user.id });
+
+  return res.json({
+    message: "Notification history cleared",
+    deletedCount: result.deletedCount,
+  });
+}
+
 module.exports = {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  clearNotifications,
 };
