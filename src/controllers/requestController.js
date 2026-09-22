@@ -50,8 +50,11 @@ async function createRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
+  const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
+    ? req.body.selected_approver_ids
+    : [req.body.selected_approver_id];
   const approvers = await resolveApproversForRequest(
-    req.body.selected_approver_ids || [req.body.selected_approver_id],
+    requestedApproverIds,
     requester._id,
     passengers,
   );
@@ -292,11 +295,13 @@ async function resubmitRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
+  const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
+    ? req.body.selected_approver_ids
+    : [req.body.selected_approver_id];
   const approvers = await resolveApproversForRequest(
-    req.body.selected_approver_ids || [req.body.selected_approver_id],
+    requestedApproverIds,
     req.user.id,
     passengers,
-    req.user.role
   );
 
   requestDocument.history.push({
