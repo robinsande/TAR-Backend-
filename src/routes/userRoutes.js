@@ -7,6 +7,7 @@ const {
   getTarDraft,
   saveTarDraft,
   deleteTarDraft,
+  getUserTarDraft,
   listUsers,
   createUser,
   updateUserRole,
@@ -38,6 +39,7 @@ router.patch("/me", asyncHandler(updateMe));
 router.get("/me/tar-draft", asyncHandler(getTarDraft));
 router.put("/me/tar-draft", asyncHandler(saveTarDraft));
 router.delete("/me/tar-draft", asyncHandler(deleteTarDraft));
+router.get("/:id/tar-draft", requireRole("superadmin"), asyncHandler(getUserTarDraft));
 router.get("/approvers", asyncHandler(listApprovers));
 router.get("/passengers", asyncHandler(listPassengers));
 router.post(

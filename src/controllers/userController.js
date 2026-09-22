@@ -87,6 +87,12 @@ async function deleteTarDraft(req, res) {
   return res.status(204).send();
 }
 
+async function getUserTarDraft(req, res) {
+  const user = await User.findById(req.params.id).select("name email tarDraft");
+  if (!user) throw new HttpError(404, "User not found");
+  return res.json({ user: { id: user._id, name: user.name, email: user.email }, draft: user.tarDraft || null });
+}
+
 async function listUsers(req, res) {
   const users = await User.find()
     .populate("managerId", "name email role isActive")
@@ -342,6 +348,7 @@ module.exports = {
   getTarDraft,
   saveTarDraft,
   deleteTarDraft,
+  getUserTarDraft,
   listUsers,
   createUser,
   updateUserRole,
