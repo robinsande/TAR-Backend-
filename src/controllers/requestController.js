@@ -119,13 +119,17 @@ async function remindApprover(req, res) {
     throw new HttpError(400, "Only pending requests can be reminded");
   }
 
-  await notifyTravelRequestUser(
+  const emailSent = await notifyTravelRequestUser(
     requestDocument.selected_approver_id,
     "approval_reminder",
     requestDocument,
     "approver",
     requestDocument.requestedBy
   );
+
+  if (!emailSent) {
+    throw new HttpError(503, "Reminder notification was recorded, but the email could not be sent. Check the Brevo sender configuration.");
+  }
 
   return res.json({ message: "Reminder sent to the assigned approver" });
 }
