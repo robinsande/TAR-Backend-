@@ -68,7 +68,7 @@ const env = {
   mongodbUri:
     process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/care-travel-request",
   jwtSecret,
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "1d",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   brevoSmtpUser: process.env.BREVO_SMTP_USER || "",
   brevoSmtpKey: process.env.BREVO_SMTP_KEY || "",
   brevoApiKey: process.env.BREVO_API_KEY || "",
