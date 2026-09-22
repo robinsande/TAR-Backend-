@@ -9,7 +9,7 @@ const {
   notifyFlightBookingSuperAdmins,
 } = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
-const { getEligibleApproverById, listEligibleApprovers, resolveManagerApproverForUser } = require("../services/approverService");
+const { getEligibleApproverById } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
 const { buildTravelRequestPdf } = require("../services/pdfService");
 const { uploadDirectory } = require("../middleware/requestUpload");
@@ -31,7 +31,7 @@ const {
   applyRequestResubmission,
 } = require("../services/travelRequestService");
 
-async function resolveApproversForRequest(approverIds, requesterId, passengers, requesterRole) {
+async function resolveApproversForRequest(approverIds, requesterId, passengers) {
   const excludeUserIds = [requesterId, ...getPassengerUserIds({ passengers })];
   const requestedIds = [...new Set((approverIds || []).filter(Boolean).map(String))];
   if (requestedIds.length) {
@@ -39,19 +39,7 @@ async function resolveApproversForRequest(approverIds, requesterId, passengers, 
       requestedIds.map((approverId) => getEligibleApproverById(approverId, { excludeUserIds }))
     );
   }
-
-  const expectedApprover = await resolveManagerApproverForUser(requesterId);
-  if (expectedApprover && !excludeUserIds.map(String).includes(String(expectedApprover._id))) {
-    return [await getEligibleApproverById(expectedApprover._id, { excludeUserIds })];
-  }
-
-  const fallbackApprover = (await listEligibleApprovers(requesterId))
-    .find((approver) => !excludeUserIds.map(String).includes(String(approver._id)));
-  if (!fallbackApprover) {
-    throw new HttpError(400, "No eligible active admin approver is available for this request");
-  }
-
-  return [await getEligibleApproverById(fallbackApprover._id, { excludeUserIds })];
+  throw new HttpError(400, "Select an active admin approver before submitting this request");
 }
 
 async function createRequest(req, res) {
@@ -66,7 +54,6 @@ async function createRequest(req, res) {
     req.body.selected_approver_ids || [req.body.selected_approver_id],
     requester._id,
     passengers,
-    requester.role
   );
 
   const requestDocument = await TravelRequest.create({
