@@ -14,7 +14,7 @@ async function getMe(req, res) {
   const user = await User.findById(req.user.id)
     .populate("managerId", "name email role isActive")
     .populate("alternateApproverIds", "name email role isActive department")
-    .select("-passwordHash -inviteToken -inviteTokenExpires");
+    .select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft");
   return res.json(user);
 }
 
@@ -58,16 +58,40 @@ async function updateMe(req, res) {
   const user = await User.findByIdAndUpdate(req.user.id, { $set: updates }, {
     new: true,
     runValidators: true,
-  }).select("-passwordHash -inviteToken -inviteTokenExpires");
+  }).select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft");
 
   return res.json(user);
+}
+
+async function getTarDraft(req, res) {
+  const user = await User.findById(req.user.id).select("tarDraft");
+  return res.json(user?.tarDraft || null);
+}
+
+async function saveTarDraft(req, res) {
+  const draft = req.body?.draft;
+  if (!draft || typeof draft !== "object" || draft.version !== 2) {
+    throw new HttpError(400, "Invalid TAR draft");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { $set: { tarDraft: draft } },
+    { new: true, runValidators: true }
+  ).select("tarDraft");
+  return res.json(user.tarDraft);
+}
+
+async function deleteTarDraft(req, res) {
+  await User.findByIdAndUpdate(req.user.id, { $set: { tarDraft: null } });
+  return res.status(204).send();
 }
 
 async function listUsers(req, res) {
   const users = await User.find()
     .populate("managerId", "name email role isActive")
     .populate("alternateApproverIds", "name email role isActive department")
-    .select("-passwordHash -inviteToken -inviteTokenExpires")
+    .select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft")
     .sort({ name: 1 });
   return res.json(users);
 }
@@ -315,6 +339,9 @@ async function listPassengers(req, res) {
 module.exports = {
   getMe,
   updateMe,
+  getTarDraft,
+  saveTarDraft,
+  deleteTarDraft,
   listUsers,
   createUser,
   updateUserRole,

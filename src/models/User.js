@@ -71,6 +71,10 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     }],
+    tarDraft: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,

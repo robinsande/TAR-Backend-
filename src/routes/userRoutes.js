@@ -4,6 +4,9 @@ const { authenticate, requireRole } = require("../middleware/authMiddleware");
 const {
   getMe,
   updateMe,
+  getTarDraft,
+  saveTarDraft,
+  deleteTarDraft,
   listUsers,
   createUser,
   updateUserRole,
@@ -32,6 +35,9 @@ router.use(authenticate);
 
 router.get("/me", asyncHandler(getMe));
 router.patch("/me", asyncHandler(updateMe));
+router.get("/me/tar-draft", asyncHandler(getTarDraft));
+router.put("/me/tar-draft", asyncHandler(saveTarDraft));
+router.delete("/me/tar-draft", asyncHandler(deleteTarDraft));
 router.get("/approvers", asyncHandler(listApprovers));
 router.get("/passengers", asyncHandler(listPassengers));
 router.post(
