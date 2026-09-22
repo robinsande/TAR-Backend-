@@ -344,7 +344,7 @@ async function resubmitRequest(req, res) {
     : [req.body.selected_approver_id];
   const approvers = await resolveApproversForRequest(
     requestedApproverIds,
-    req.user.id,
+    requestDocument.requestedBy._id,
     passengers,
   );
 

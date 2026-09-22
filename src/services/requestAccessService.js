@@ -126,7 +126,7 @@ function ensureApprover(user, request) {
 function ensureRequestOwner(user, request) {
   const requesterId = idToString(request.requestedBy);
 
-  if (requesterId !== user.id) {
+  if (user.role !== "superadmin" && requesterId !== user.id) {
     throw new HttpError(403, "Only the requester can modify this request");
   }
 }
