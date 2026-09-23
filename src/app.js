@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const env = require("./config/env");
@@ -29,6 +30,7 @@ function createApp() {
 
   app.set("trust proxy", 1);
   app.use(helmet());
+  app.use(compression());
   app.use(createCorsMiddleware());
   app.use(express.json({ limit: "1mb" }));
   if (process.env.NODE_ENV !== "test") {
