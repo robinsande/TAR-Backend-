@@ -12,7 +12,10 @@ const {
 function createCorsMiddleware() {
   return cors({
     origin: (requestOrigin, callback) => {
-      if (!requestOrigin || env.corsOrigins.includes(requestOrigin)) {
+      const isLocalFrontend =
+        requestOrigin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin);
+
+      if (!requestOrigin || env.corsOrigins.includes(requestOrigin) || isLocalFrontend) {
         return callback(null, true);
       }
 
