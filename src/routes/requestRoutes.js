@@ -9,6 +9,7 @@ const {
   resubmitTravelRequestValidator,
   rejectTravelRequestValidator,
   approveTravelRequestValidator,
+  rerouteApprovalValidator,
 } = require("../validators/requestValidators");
 const {
   createRequest,
@@ -24,6 +25,7 @@ const {
   downloadRequestAttachment,
   deleteRequestAttachment,
   deleteRequest,
+  rerouteApproval,
 } = require("../controllers/requestController");
 
 const router = express.Router();
@@ -83,6 +85,14 @@ router.delete(
   "/:id",
   requireRole("superadmin"),
   asyncHandler(deleteRequest)
+);
+
+router.patch(
+  "/:id/reroute-approval",
+  requireRole("superadmin"),
+  rerouteApprovalValidator,
+  validationErrorHandler,
+  asyncHandler(rerouteApproval)
 );
 
 router.patch(

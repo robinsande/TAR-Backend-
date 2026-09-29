@@ -43,7 +43,7 @@ async function createAndSendNotification({
   return notification;
 }
 
-function buildTravelRequestNotificationContent(type, requestDocument, audience = "approver", requester = null) {
+function buildTravelRequestNotificationContent(type, requestDocument, audience = "approver", requester = null, extras = {}) {
   const destination = requestDocument.itinerary.destination;
   const purpose = requestDocument.purposeOfTrip;
   const requesterLabel = requester?.email
@@ -94,6 +94,13 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
     }
   }
 
+  if (audience === "superadmin" && type === "approved") {
+    return {
+      subject: "Approved TAR notification",
+      message: `${requesterLabel} has an approved travel request to ${destination} for ${purpose}. Please review it in the CARE TAR system.`,
+    };
+  }
+
   switch (type) {
     case "flight_booking_required":
       return {
@@ -125,12 +132,28 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
         subject: "Travel request resubmitted",
           message: `${requesterLabel} edited and resubmitted a travel request to ${destination} for ${purpose}. Please review and approve the TAR.`,
       };
+    case "rerouted":
+      return {
+        subject: "Approval re-routed to you",
+        message: `A superadmin re-routed a travel request to ${destination} for ${purpose} from another approver to you. It is awaiting your approval.${
+          extras?.comment ? `\n\nReroute comment: ${extras.comment}` : ""
+        }`,
+      };
     default:
       return {
         subject: "Travel request update",
         message: `A travel request to ${destination} for ${purpose} was updated.`,
       };
   }
+}
+
+function buildSuperAdminApprovalNotification(requestDocument) {
+  const destination = requestDocument.itinerary.destination;
+  const purpose = requestDocument.purposeOfTrip;
+  return {
+    subject: "TAR approved: management notification",
+    message: `A travel request to ${destination} for ${purpose} has been approved and is available for oversight.`,
+  };
 }
 
 function buildReimbursementNotificationContent(type, report) {
@@ -166,12 +189,12 @@ function buildReimbursementNotificationContent(type, report) {
   }
 }
 
-async function notifyTravelRequestUser(recipient, type, requestDocument, audience = "approver", requester = null) {
+async function notifyTravelRequestUser(recipient, type, requestDocument, audience = "approver", requester = null, extras = {}) {
   if (!recipient) {
     return null;
   }
 
-  const content = buildTravelRequestNotificationContent(type, requestDocument, audience, requester);
+  const content = buildTravelRequestNotificationContent(type, requestDocument, audience, requester, extras);
   const requesterEmail = requester?.email || requestDocument.requestedBy?.email || null;
 
   return createAndSendNotification({
@@ -186,7 +209,7 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
   });
 }
 
-async function notifyTravelRequestApprover(requestDocument, type, requester = null) {
+async function notifyTravelRequestApprover(requestDocument, type, requester = null, extras = {}) {
   const selectedIds = requestDocument.selected_approver_ids?.length
     ? requestDocument.selected_approver_ids
     : [requestDocument.selected_approver_id];
@@ -197,33 +220,25 @@ async function notifyTravelRequestApprover(requestDocument, type, requester = nu
   }).select("-passwordHash");
 
   const notifications = await Promise.all(
-    approvers.map((approver) => notifyTravelRequestUser(approver, type, requestDocument, "approver", requester))
+    approvers.map((approver) => notifyTravelRequestUser(approver, type, requestDocument, "approver", requester, extras))
   );
   return notifications.length === 1 ? notifications[0] : notifications;
 }
 
-async function notifyFlightBookingSuperAdmins(requestDocument) {
+async function notifyApprovedTarSuperAdmins(requestDocument) {
   if (requestDocument.status !== "approved") {
     return [];
   }
 
   const superAdmins = await User.find({
-    role: "superadmin",
+    role: { $in: ["superadmin", "super_superadmin"] },
     isActive: true,
   }).select("-passwordHash");
   const requester = requestDocument.requestedBy;
 
-  return Promise.all(
-    superAdmins.map((superAdmin) =>
-      notifyTravelRequestUser(
-        superAdmin,
-        "flight_booking_required",
-        requestDocument,
-        "flight_booking",
-        requester
-      )
-    )
-  );
+  return Promise.all(superAdmins.map((superAdmin) =>
+    notifyTravelRequestUser(superAdmin, "approved", requestDocument, "superadmin", requester)
+  ));
 }
 
 async function resendTravelRequestNotifications(requestDocument) {
@@ -233,7 +248,7 @@ async function resendTravelRequestNotifications(requestDocument) {
     "new_request",
     requester
   );
-  const flightNotifications = await notifyFlightBookingSuperAdmins(requestDocument);
+  const flightNotifications = await notifyApprovedTarSuperAdmins(requestDocument);
 
   return {
     approvalCount: approvalNotification ? 1 : 0,
@@ -275,7 +290,7 @@ module.exports = {
   notifyTravelRequestUser,
   notifyTravelRequestApprover,
   notifyTravelRequestPassengers,
-  notifyFlightBookingSuperAdmins,
+  notifyApprovedTarSuperAdmins,
   resendTravelRequestNotifications,
   notifyReimbursementUser,
 };

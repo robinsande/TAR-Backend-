@@ -6,7 +6,7 @@ const {
   notifyTravelRequestUser,
   notifyTravelRequestApprover,
   notifyTravelRequestPassengers,
-  notifyFlightBookingSuperAdmins,
+  notifyApprovedTarSuperAdmins,
 } = require("../services/notificationService");
 const { createAuditLog } = require("../services/auditLogService");
 const { getEligibleApproverById } = require("../services/approverService");
@@ -304,7 +304,7 @@ async function approveRequest(req, res) {
   if (requester && !isPassengerOnRequest(requestDocument, requester)) {
     await notifyTravelRequestUser(requester, "approved", requestDocument);
   }
-  await notifyFlightBookingSuperAdmins(requestDocument);
+  await notifyApprovedTarSuperAdmins(requestDocument);
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -466,6 +466,91 @@ function downloadTravelRequestTemplatePdf(req, res) {
   });
 }
 
+async function rerouteApproval(req, res) {
+  if (req.user.role !== "superadmin") {
+    throw new HttpError(403, "Only superadmins can re-route approvals");
+  }
+
+  const requestDocument = await TravelRequest.findById(req.params.id)
+    .populate("requestedBy", "-passwordHash")
+    .populate("selected_approver_id", "-passwordHash")
+    .populate("selected_approver_ids", "-passwordHash");
+
+  if (!requestDocument) {
+    throw new HttpError(404, "Travel request not found");
+  }
+
+  if (requestDocument.status !== "pending") {
+    throw new HttpError(400, "Only pending requests can have their approval re-routed");
+  }
+
+  const newApprover = await getEligibleApproverById(req.body.newApproverId, {
+    excludeUserIds: [
+      requestDocument.requestedBy?._id,
+      ...(requestDocument.passengers || [])
+        .map((p) => p.user?._id || p.user)
+        .filter(Boolean),
+    ],
+  });
+
+  const oldApproverIds = [
+    requestDocument.selected_approver_id,
+    ...(requestDocument.selected_approver_ids || []),
+  ].filter(Boolean).map((id) => String(id));
+  const oldApprover = requestDocument.selected_approver_id;
+  const oldApprovers = requestDocument.selected_approver_ids || [requestDocument.selected_approver_id];
+
+  requestDocument.history.push({
+    snapshot: getEditableRequestSnapshot(requestDocument),
+    status: requestDocument.status,
+    decision: requestDocument.decision,
+    editedAt: new Date(),
+    metadata: {
+      action: "reroute_approval",
+      previousApproverIds: oldApproverIds,
+      newApproverId: newApprover._id.toString(),
+      comment: req.body?.comment || null,
+      reroutedBy: req.user.id,
+    },
+  });
+
+  requestDocument.selected_approver_id = newApprover._id;
+  requestDocument.selected_approver_ids = [newApprover._id];
+  resetRequestDecision(requestDocument);
+  requestDocument.submittedAt = new Date();
+  requestDocument.version += 1;
+
+  await requestDocument.save();
+
+  await createAuditLog({
+    action: "request_approval_rerouted",
+    performedBy: req.user.id,
+    targetRequest: requestDocument._id,
+    metadata: {
+      previousApproverIds: oldApproverIds,
+      newApproverId: newApprover._id.toString(),
+      comment: req.body?.comment ?? null,
+    },
+  });
+
+  const reroutedRequest = await populateTravelRequestById(requestDocument._id);
+
+  await notifyTravelRequestApprover(
+    reroutedRequest,
+    "rerouted",
+    reroutedRequest.requestedBy,
+    {
+      comment: req.body?.comment || null,
+      oldApprover,
+      oldApprovers,
+      newApprover,
+    }
+  );
+
+  const populated = await buildTravelRequestResponse(requestDocument._id);
+  return res.json(populated);
+}
+
 module.exports = {
   createRequest,
   listRequests,
@@ -482,4 +567,5 @@ module.exports = {
   getPendingMyApproval,
   downloadTravelRequestPdf,
   downloadTravelRequestTemplatePdf,
+  rerouteApproval,
 };

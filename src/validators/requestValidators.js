@@ -87,9 +87,15 @@ const approveTravelRequestValidator = [
   body("decisionDate").optional().isISO8601().withMessage("Approval date must be a valid date"),
 ];
 
+const rerouteApprovalValidator = [
+  body("newApproverId").isMongoId().withMessage("A valid new approver ID is required"),
+  body("comment").optional().isString().withMessage("Comment must be a string"),
+];
+
 module.exports = {
   createTravelRequestValidator,
   resubmitTravelRequestValidator,
   rejectTravelRequestValidator,
   approveTravelRequestValidator,
+  rerouteApprovalValidator,
 };
