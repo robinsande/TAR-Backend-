@@ -29,6 +29,7 @@ const {
   buildTravelRequestResponse,
   getEditableRequestSnapshot,
   applyRequestDecision,
+  resetRequestDecision,
   applyRequestResubmission,
 } = require("../services/travelRequestService");
 
@@ -85,9 +86,12 @@ async function createRequest(req, res) {
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
   await notifyTravelRequestApprover(requestDocument, "new_request", requester);
+  requestDocument.lastApprovalReminderAt = new Date();
   if (!isPassengerOnRequest(requestDocument, requester)) {
     await notifyTravelRequestUser(requester, "new_request", requestDocument, "requester");
   }
+
+  await requestDocument.save();
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -123,25 +127,30 @@ async function remindApprover(req, res) {
     throw new HttpError(400, "Only pending requests can be reminded");
   }
 
-  const emailSent = await notifyTravelRequestUser(
-    requestDocument.selected_approver_id,
-    "approval_reminder",
+  const notifications = await notifyTravelRequestApprover(
     requestDocument,
-    "approver",
+    "approval_reminder",
     requestDocument.requestedBy
   );
 
-  if (!emailSent) {
+  const sentCount = Array.isArray(notifications)
+    ? notifications.filter(Boolean).length
+    : Number(Boolean(notifications));
+
+  if (!sentCount) {
     throw new HttpError(503, "Reminder notification was recorded, but the email could not be sent. Check the Brevo sender configuration.");
   }
 
-  return res.json({ message: "Reminder sent to the assigned approver" });
+  return res.json({
+    message: `Reminder sent to ${sentCount} assigned approver${sentCount === 1 ? "" : "s"}`,
+    sentCount,
+  });
 }
 
 async function remindAllPendingApprovers(req, res) {
   const requests = await TravelRequest.find({ status: "pending" })
     .populate("requestedBy", "name email")
-    .select("requestedBy selected_approver_id selected_approver_ids itinerary purposeOfTrip status");
+    .select("requestedBy selected_approver_id selected_approver_ids itinerary purposeOfTrip status lastApprovalReminderAt");
   const results = { total: requests.length, sent: 0, failed: 0, skipped: 0 };
 
   for (const requestDocument of requests) {
@@ -157,9 +166,14 @@ async function remindAllPendingApprovers(req, res) {
       continue;
     }
     const sent = Array.isArray(notifications) ? notifications.filter(Boolean).length : Number(Boolean(notifications));
-    if (!sent) results.skipped += 1;
-    else if (sent === (requestDocument.selected_approver_ids?.length || 1)) results.sent += sent;
-    else results.failed += 1;
+    if (!sent) {
+      results.skipped += 1;
+    } else {
+      requestDocument.lastApprovalReminderAt = new Date();
+      await requestDocument.save();
+      if (sent === (requestDocument.selected_approver_ids?.length || 1)) results.sent += sent;
+      else results.failed += sent;
+    }
   }
 
   return res.json(results);
@@ -384,6 +398,7 @@ async function resubmitRequest(req, res) {
   });
 
   applyRequestResubmission(requestDocument, req.body, approvers, passengers);
+  requestDocument.lastApprovalReminderAt = new Date();
 
   await requestDocument.save();
 
@@ -518,6 +533,7 @@ async function rerouteApproval(req, res) {
   requestDocument.selected_approver_ids = [newApprover._id];
   resetRequestDecision(requestDocument);
   requestDocument.submittedAt = new Date();
+  requestDocument.lastApprovalReminderAt = new Date();
   requestDocument.version += 1;
 
   await requestDocument.save();
