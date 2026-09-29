@@ -286,10 +286,11 @@ function drawTarGrid(doc, rows, options = {}) {
 
     row.cells.forEach((cell) => {
       const width = tableWidth * cell.width;
-      const imageSource = cell.image &&
-        (String(cell.image).startsWith("data:image/") || fs.existsSync(String(cell.image)))
-        ? cell.image
-        : null;
+      const rawImage = cell.image ? String(cell.image) : "";
+      const isDataImage = rawImage.startsWith("data:image/") || rawImage.startsWith("data:application/octet-stream;");
+      const isFileImage = rawImage && fs.existsSync(rawImage);
+      const isImageSignature = rawImage && (isDataImage || isFileImage || rawImage.length > 1000);
+      const imageSource = isImageSignature ? rawImage : null;
       drawBox(doc, x, y, width, rowHeight, { fill: cell.fill });
       if (imageSource) {
         if (cell.value) {
@@ -302,11 +303,24 @@ function drawTarGrid(doc, rows, options = {}) {
               height: 12,
             });
         }
-        doc.image(imageSource, x + padding, y + padding + (cell.value ? 12 : 0), {
-          fit: [width - padding * 2, rowHeight - padding * 2 - (cell.value ? 12 : 0)],
-          align: "center",
-          valign: "center",
-        });
+        try {
+          doc.image(imageSource, x + padding, y + padding + (cell.value ? 12 : 0), {
+            fit: [width - padding * 2, rowHeight - padding * 2 - (cell.value ? 12 : 0)],
+            align: "center",
+            valign: "center",
+          });
+        } catch (imgError) {
+          doc
+            .font("Helvetica")
+            .fontSize(7)
+            .fillColor("#555555")
+            .text("[Signature on file]", x + padding, y + padding + (cell.value ? 12 : 0), {
+              width: width - padding * 2,
+              height: rowHeight - padding * 2 - (cell.value ? 12 : 0),
+              align: "center",
+              valign: "center",
+            });
+        }
       } else {
         doc
           .font(cell.bold ? "Helvetica-Bold" : "Helvetica")

@@ -83,7 +83,7 @@ const rejectTravelRequestValidator = [
 
 const approveTravelRequestValidator = [
   body("comment").optional({ values: "falsy" }).isString().withMessage("Comment must be a string"),
-  body("signature").isString().notEmpty().withMessage("Approver signature is required"),
+  body("signature").isString({ allowEmpty: false }).notEmpty().withMessage("Approver signature is required"),
   body("decisionDate").optional().isISO8601().withMessage("Approval date must be a valid date"),
 ];
 
