@@ -287,9 +287,19 @@ function drawTarGrid(doc, rows, options = {}) {
     row.cells.forEach((cell) => {
       const width = tableWidth * cell.width;
       const rawImage = cell.image ? String(cell.image) : "";
-      const isDataImage = rawImage.startsWith("data:image/") || rawImage.startsWith("data:application/octet-stream;");
+      const isDataImage =
+        rawImage.startsWith("data:image/") ||
+        rawImage.startsWith("data:application/octet-stream;") ||
+        rawImage.startsWith("data:application/pdf;") ||
+        rawImage.startsWith("data:image/svg+xml") ||
+        rawImage.startsWith("data:;base64,");
       const isFileImage = rawImage && fs.existsSync(rawImage);
-      const isImageSignature = rawImage && (isDataImage || isFileImage || rawImage.length > 1000);
+      const isRemoteUrl = rawImage.startsWith("http://") || rawImage.startsWith("https://");
+      const looksLikeBase64Blob =
+        rawImage.length >= 500 &&
+        (rawImage.length > 2000 || /^[A-Za-z0-9+/=\s]+$/.test(rawImage.slice(-200)));
+      const isImageSignature =
+        rawImage && (isDataImage || isFileImage || isRemoteUrl || rawImage.length > 500 || looksLikeBase64Blob);
       const imageSource = isImageSignature ? rawImage : null;
       drawBox(doc, x, y, width, rowHeight, { fill: cell.fill });
       if (imageSource) {
@@ -304,17 +314,27 @@ function drawTarGrid(doc, rows, options = {}) {
             });
         }
         try {
-          doc.image(imageSource, x + padding, y + padding + (cell.value ? 12 : 0), {
+          let src = imageSource;
+          if (looksLikeBase64Blob && !rawImage.startsWith("data:")) {
+            src = `data:image/png;base64,${rawImage.replace(/\s+/g, "")}`;
+          }
+          doc.image(src, x + padding, y + padding + (cell.value ? 12 : 0), {
             fit: [width - padding * 2, rowHeight - padding * 2 - (cell.value ? 12 : 0)],
             align: "center",
             valign: "center",
           });
         } catch (imgError) {
+          const signatureLabel =
+            cell.signatureLabel && typeof cell.signatureLabel === "string"
+              ? cell.signatureLabel
+              : rawImage && rawImage.length < 120 && !rawImage.startsWith("data:")
+                ? rawImage
+                : "[Signature on file]";
           doc
             .font("Helvetica")
             .fontSize(7)
             .fillColor("#555555")
-            .text("[Signature on file]", x + padding, y + padding + (cell.value ? 12 : 0), {
+            .text(signatureLabel, x + padding, y + padding + (cell.value ? 12 : 0), {
               width: width - padding * 2,
               height: rowHeight - padding * 2 - (cell.value ? 12 : 0),
               align: "center",

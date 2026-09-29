@@ -83,7 +83,16 @@ const rejectTravelRequestValidator = [
 
 const approveTravelRequestValidator = [
   body("comment").optional({ values: "falsy" }).isString().withMessage("Comment must be a string"),
-  body("signature").isString({ allowEmpty: false }).notEmpty().withMessage("Approver signature is required"),
+  body("signature")
+    .custom((value) => {
+      if (value == null) throw new Error("Approver signature is required");
+      if (typeof value !== "string") throw new Error("Approver signature must be text");
+      const trimmed = value.trim();
+      if (!trimmed) throw new Error("Approver signature cannot be empty");
+      if (trimmed.length < 2) throw new Error("Approver signature is too short");
+      return true;
+    })
+    .withMessage("Approver signature is required"),
   body("decisionDate").optional().isISO8601().withMessage("Approval date must be a valid date"),
 ];
 
