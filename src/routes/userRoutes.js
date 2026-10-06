@@ -18,6 +18,7 @@ const {
   deleteUser,
   listApprovers,
   listPassengers,
+  listBudgetHolders,
 } = require("../controllers/userController");
 const { validationErrorHandler } = require("../middleware/errorHandler");
 const {
@@ -42,6 +43,7 @@ router.delete("/me/tar-draft", asyncHandler(deleteTarDraft));
 router.get("/:id/tar-draft", requireRole("superadmin"), asyncHandler(getUserTarDraft));
 router.get("/approvers", asyncHandler(listApprovers));
 router.get("/passengers", asyncHandler(listPassengers));
+router.get("/budget-holders", asyncHandler(listBudgetHolders));
 router.post(
   "/",
   requireRole("superadmin"),

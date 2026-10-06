@@ -1,5 +1,6 @@
 const Notification = require("../models/Notification");
 const User = require("../models/User");
+const BudgetHolder = require("../models/BudgetHolder");
 const { sendEmail } = require("./emailService");
 const { loadPassengerUsers } = require("./passengerService");
 
@@ -97,6 +98,19 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
           message: `A travel request to ${destination} for ${purpose} that lists you as a passenger was updated.`,
         };
     }
+  }
+
+  if (audience === "budget_holder") {
+    const fundCode = extras.budgetHolder?.fundCode || requestDocument.project?.fundCode || "the submitted fund code";
+    return type === "approval_reminder"
+      ? {
+          subject: "Reminder: TAR awaiting your fund-code review",
+          message: `${requesterLabel} is reminding you to review the fund code ${fundCode} on the TAR for ${destination} before it proceeds to the line manager.`,
+        }
+      : {
+          subject: "TAR awaiting your fund-code review",
+          message: `${requesterLabel} submitted a TAR for ${destination} and selected you to verify fund code ${fundCode}. Please approve or reject it before it proceeds to the line manager.`,
+        };
   }
 
   if (audience === "superadmin" && type === "approved") {
@@ -208,13 +222,34 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
     message: content.message,
     subject: content.subject,
     requestId: requestDocument._id,
-    replyTo: ["approver", "flight_booking"].includes(audience) ? requesterEmail : null,
+    replyTo: ["approver", "flight_booking", "budget_holder"].includes(audience) ? requesterEmail : null,
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });
 }
 
 async function notifyTravelRequestApprover(requestDocument, type, requester = null, extras = {}) {
+  if (requestDocument.approvalStage === "budget_holder") {
+    const budgetHolderId = requestDocument.selected_budget_holder_id?._id ||
+      requestDocument.selected_budget_holder_id;
+    const budgetHolder = budgetHolderId
+      ? await BudgetHolder.findById(budgetHolderId).populate("user")
+      : null;
+    const user = budgetHolder?.user;
+    if (!user || !user.isActive || !budgetHolder.isActive) {
+      return [];
+    }
+    const notificationType = type === "approval_reminder" ? type : "new_request";
+    return [await notifyTravelRequestUser(
+      user,
+      notificationType,
+      requestDocument,
+      "budget_holder",
+      requester,
+      { ...extras, budgetHolder }
+    )];
+  }
+
   const selectedApproverIds = requestDocument.selected_approver_ids?.length
     ? requestDocument.selected_approver_ids
     : [requestDocument.selected_approver_id];
@@ -243,11 +278,8 @@ async function notifyApprovedTarSuperAdmins(requestDocument) {
     return [];
   }
 
-  const recipientRoles = requestDocument.modeOfTravel?.aircraft === true
-    ? ["super_superadmin"]
-    : ["superadmin", "super_superadmin"];
   const superAdmins = await User.find({
-    role: { $in: recipientRoles },
+    role: "super_superadmin",
     isActive: true,
   }).select("-passwordHash");
   const requester = requestDocument.requestedBy;

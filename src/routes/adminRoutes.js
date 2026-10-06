@@ -3,7 +3,9 @@ const asyncHandler = require("../utils/asyncHandler");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 const {
   upload,
+  uploadBudgetHolderFile,
   importEmployees,
+  importBudgetHolders,
   resendApprovedTarNotifications,
 } = require("../controllers/adminController");
 
@@ -15,6 +17,12 @@ router.post(
   "/import-employees",
   upload.single("file"),
   asyncHandler(importEmployees)
+);
+
+router.post(
+  "/import-budget-holders",
+  uploadBudgetHolderFile.single("file"),
+  asyncHandler(importBudgetHolders)
 );
 
 router.post(

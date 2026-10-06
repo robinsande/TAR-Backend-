@@ -465,6 +465,8 @@ function buildTravelRequestPdf(res, requestDocument) {
   const itinerary = requestDocument.itinerary || {};
   const mode = requestDocument.modeOfTravel || {};
   const requester = requestDocument.requestedBy || {};
+  const budgetHolder = requestDocument.selected_budget_holder_id || {};
+  const budgetHolderDecision = requestDocument.budgetHolderDecision || {};
   const approver =
     requestDocument.decision?.decidedBy ||
     requestDocument.selected_approver_id ||
@@ -509,9 +511,27 @@ function buildTravelRequestPdf(res, requestDocument) {
         { width: 0.18, value: project.businessUnit },
         { width: 0.15, value: "Fund Code:", bold: true },
         { width: 0.18, value: project.fundCode },
-        { width: 0.15, value: "", bold: true },
-        { width: 0.19, value: "" },
+        { width: 0.15, value: "Budget Holder:", bold: true },
+        { width: 0.19, value: budgetHolder.name || budgetHolder.email },
       ], height: 24 },
+      { cells: [
+        { width: 0.20, value: "Fund Code Verified By:", bold: true },
+        { width: 0.20, value: budgetHolderDecision.decidedBy?.name || budgetHolder.name },
+        { width: 0.15, value: "Registered Fund Code:", bold: true },
+        { width: 0.15, value: budgetHolder.fundCode },
+        { width: 0.15, value: "Review Status:", bold: true },
+        { width: 0.15, value: budgetHolderDecision.status || "Pending" },
+      ], height: 28 },
+      { cells: [
+        { width: 0.20, value: "Budget Holder Email:", bold: true },
+        { width: 0.80, value: budgetHolder.email },
+      ], height: 24 },
+      { cells: [
+        { width: 0.20, value: "Budget Holder Signature:", bold: true },
+        { width: 0.45, value: budgetHolderDecision.signature ? "" : "____________________________", image: budgetHolderDecision.signature },
+        { width: 0.15, value: "Date:", bold: true },
+        { width: 0.20, value: formatDate(budgetHolderDecision.decidedAt) },
+      ], height: 40 },
       { cells: [
         { width: 0.15, value: "Project ID:", bold: true },
         { width: 0.18, value: project.projectId },

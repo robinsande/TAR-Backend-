@@ -1,4 +1,5 @@
 const TravelRequest = require("../models/TravelRequest");
+const BudgetHolder = require("../models/BudgetHolder");
 const User = require("../models/User");
 const path = require("path");
 const HttpError = require("../utils/httpError");
@@ -51,6 +52,14 @@ async function createRequest(req, res) {
     throw new HttpError(404, "Requester not found");
   }
 
+  const budgetHolder = await BudgetHolder.findOne({
+    _id: req.body.selected_budget_holder_id,
+    isActive: true,
+  }).populate("user");
+  if (!budgetHolder || !budgetHolder.user?.isActive) {
+    throw new HttpError(400, "Select an active budget holder with an active system account");
+  }
+
   const passengers = await resolvePassengers(req.body.passengers);
   const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
     ? req.body.selected_approver_ids
@@ -63,6 +72,8 @@ async function createRequest(req, res) {
 
   const requestDocument = await TravelRequest.create({
     requestedBy: requester._id,
+    selected_budget_holder_id: budgetHolder._id,
+    approvalStage: "budget_holder",
     selected_approver_id: approvers[0]._id,
     selected_approver_ids: approvers.map((approver) => approver._id),
     project: req.body.project,
@@ -342,6 +353,91 @@ async function approveRequest(req, res) {
   return res.json(populated);
 }
 
+async function getPendingMyBudgetApproval(req, res) {
+  const holderIds = await BudgetHolder.find({ user: req.user.id, isActive: true }).distinct("_id");
+  const requests = await getTravelRequestPopulateQuery(
+    TravelRequest.find({
+      selected_budget_holder_id: { $in: holderIds },
+      approvalStage: "budget_holder",
+      status: "pending",
+    }).sort({ createdAt: -1 })
+  );
+  return res.json(requests);
+}
+
+async function decideBudgetHolderRequest(req, res, decisionStatus) {
+  const requestDocument = await TravelRequest.findById(req.params.id)
+    .populate("requestedBy", "-passwordHash")
+    .populate({ path: "selected_budget_holder_id", populate: { path: "user", select: "name email isActive" } });
+
+  if (!requestDocument) {
+    throw new HttpError(404, "Travel request not found");
+  }
+  if (
+    requestDocument.status !== "pending" ||
+    requestDocument.approvalStage !== "budget_holder"
+  ) {
+    throw new HttpError(400, "This request is not awaiting budget-holder approval");
+  }
+  if (String(requestDocument.selected_budget_holder_id?.user?._id) !== req.user.id) {
+    throw new HttpError(403, "Only the selected budget holder can review this request");
+  }
+
+  requestDocument.budgetHolderDecision = {
+    status: decisionStatus,
+    decidedBy: req.user.id,
+    decidedAt: new Date(),
+    comment: req.body?.comment || null,
+    signature: decisionStatus === "approved" ? req.body.signature : null,
+  };
+
+  const requester = requestDocument.requestedBy;
+  if (decisionStatus === "approved") {
+    requestDocument.approvalStage = "line_manager";
+  } else {
+    requestDocument.status = "rejected";
+  }
+  await requestDocument.save();
+
+  await createAuditLog({
+    action: `request_budget_holder_${decisionStatus}`,
+    performedBy: req.user.id,
+    targetRequest: requestDocument._id,
+    metadata: {
+      fundCode: requestDocument.project.fundCode,
+      budgetHolderFundCode: requestDocument.selected_budget_holder_id.fundCode,
+      comment: requestDocument.budgetHolderDecision.comment,
+    },
+  });
+
+  if (decisionStatus === "approved") {
+    const notifications = await notifyTravelRequestApprover(
+      requestDocument,
+      "new_request",
+      requester
+    );
+    if (notifications.some(Boolean)) {
+      requestDocument.lastApprovalReminderAt = new Date();
+      await requestDocument.save();
+    }
+  } else {
+    await notifyTravelRequestPassengers(requestDocument, "rejected");
+    if (requester && !isPassengerOnRequest(requestDocument, requester)) {
+      await notifyTravelRequestUser(requester, "rejected", requestDocument);
+    }
+  }
+
+  return res.json(await buildTravelRequestResponse(requestDocument._id));
+}
+
+async function approveBudgetHolderRequest(req, res) {
+  return decideBudgetHolderRequest(req, res, "approved");
+}
+
+async function rejectBudgetHolderRequest(req, res) {
+  return decideBudgetHolderRequest(req, res, "rejected");
+}
+
 async function rejectRequest(req, res) {
   const requestDocument = await TravelRequest.findById(req.params.id).populate(
     "requestedBy",
@@ -398,6 +494,13 @@ async function resubmitRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
+  const budgetHolder = await BudgetHolder.findOne({
+    _id: req.body.selected_budget_holder_id,
+    isActive: true,
+  }).populate("user");
+  if (!budgetHolder || !budgetHolder.user?.isActive) {
+    throw new HttpError(400, "Select an active budget holder with an active system account");
+  }
   const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
     ? req.body.selected_approver_ids
     : [req.body.selected_approver_id];
@@ -414,7 +517,7 @@ async function resubmitRequest(req, res) {
     editedAt: new Date(),
   });
 
-  applyRequestResubmission(requestDocument, req.body, approvers, passengers);
+  applyRequestResubmission(requestDocument, req.body, approvers, passengers, budgetHolder);
   requestDocument.lastApprovalReminderAt = null;
 
   await requestDocument.save();
@@ -446,9 +549,12 @@ async function getPendingMyApproval(req, res) {
   const query =
     req.user.role === "superadmin"
       ? { status: "pending" }
+      : req.user.role !== "admin"
+        ? { _id: null }
       : {
           $or: [{ selected_approver_id: req.user.id }, { selected_approver_ids: req.user.id }],
           status: "pending",
+          approvalStage: "line_manager",
         };
 
   const requests = await getTravelRequestPopulateQuery(
@@ -494,6 +600,8 @@ function downloadTravelRequestTemplatePdf(req, res) {
     _id: "template",
     requestedBy: {},
     project: {},
+    selected_budget_holder_id: {},
+    budgetHolderDecision: {},
     assignedAreaOfOperation: "",
     employeeOffice: "",
     purposeOfTrip: "",
@@ -518,6 +626,9 @@ async function rerouteApproval(req, res) {
 
   if (!requestDocument) {
     throw new HttpError(404, "Travel request not found");
+  }
+  if (requestDocument.approvalStage === "budget_holder") {
+    throw new HttpError(400, "The request must pass budget-holder review before the line-manager approval can be rerouted");
   }
 
   if (requestDocument.status !== "pending") {
@@ -607,6 +718,9 @@ module.exports = {
   deleteRequestAttachment,
   deleteRequest,
   approveRequest,
+  getPendingMyBudgetApproval,
+  approveBudgetHolderRequest,
+  rejectBudgetHolderRequest,
   rejectRequest,
   resubmitRequest,
   getPendingMyApproval,

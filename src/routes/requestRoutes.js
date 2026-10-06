@@ -18,6 +18,9 @@ const {
   remindApprover,
   remindAllPendingApprovers,
   approveRequest,
+  getPendingMyBudgetApproval,
+  approveBudgetHolderRequest,
+  rejectBudgetHolderRequest,
   rejectRequest,
   resubmitRequest,
   getPendingMyApproval,
@@ -36,6 +39,28 @@ router.get(
   "/pending-my-approval",
   requireRole("admin", "superadmin"),
   asyncHandler(getPendingMyApproval)
+);
+
+router.get(
+  "/pending-my-budget-approval",
+  requireRole("user", "admin"),
+  asyncHandler(getPendingMyBudgetApproval)
+);
+
+router.patch(
+  "/:id/budget-holder/approve",
+  requireRole("user", "admin"),
+  approveTravelRequestValidator,
+  validationErrorHandler,
+  asyncHandler(approveBudgetHolderRequest)
+);
+
+router.patch(
+  "/:id/budget-holder/reject",
+  requireRole("user", "admin"),
+  rejectTravelRequestValidator,
+  validationErrorHandler,
+  asyncHandler(rejectBudgetHolderRequest)
 );
 
 router.post(

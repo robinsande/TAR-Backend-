@@ -79,6 +79,25 @@ const decisionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const budgetHolderDecisionSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["approved", "rejected"],
+      default: null,
+    },
+    decidedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    decidedAt: { type: Date, default: null },
+    comment: { type: String, trim: true, default: null },
+    signature: { type: String, trim: true, default: null },
+  },
+  { _id: false }
+);
+
 const attachmentSchema = new mongoose.Schema(
   {
     category: {
@@ -134,6 +153,20 @@ const travelRequestSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     }],
+    selected_budget_holder_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BudgetHolder",
+      default: null,
+    },
+    approvalStage: {
+      type: String,
+      enum: ["budget_holder", "line_manager"],
+      default: "line_manager",
+    },
+    budgetHolderDecision: {
+      type: budgetHolderDecisionSchema,
+      default: () => ({}),
+    },
     project: {
       type: projectSchema,
       required: true,
@@ -214,6 +247,7 @@ const travelRequestSchema = new mongoose.Schema(
 travelRequestSchema.index({ requestedBy: 1, createdAt: -1 });
 travelRequestSchema.index({ "passengers.user": 1, createdAt: -1 });
 travelRequestSchema.index({ selected_approver_id: 1, status: 1 });
+travelRequestSchema.index({ selected_budget_holder_id: 1, status: 1, approvalStage: 1 });
 travelRequestSchema.index({ status: 1 });
 travelRequestSchema.index({ createdAt: -1 });
 

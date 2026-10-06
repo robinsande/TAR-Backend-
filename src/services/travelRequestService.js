@@ -5,6 +5,8 @@ function getTravelRequestPopulateQuery(query) {
     .populate("requestedBy", "-passwordHash")
     .populate("selected_approver_id", "-passwordHash")
     .populate("selected_approver_ids", "-passwordHash")
+    .populate({ path: "selected_budget_holder_id", populate: { path: "user", select: "name email" } })
+    .populate("budgetHolderDecision.decidedBy", "name email")
     .populate("decision.decidedBy", "-passwordHash")
     .populate("passengers.user", "-passwordHash");
 }
@@ -21,6 +23,7 @@ function getEditableRequestSnapshot(requestDocument) {
   return {
     selected_approver_id: requestDocument.selected_approver_id,
     selected_approver_ids: requestDocument.selected_approver_ids || [requestDocument.selected_approver_id],
+    selected_budget_holder_id: requestDocument.selected_budget_holder_id,
     project: requestDocument.project,
     assignedAreaOfOperation: requestDocument.assignedAreaOfOperation,
     employeeOffice: requestDocument.employeeOffice,
@@ -56,7 +59,7 @@ function resetRequestDecision(requestDocument) {
   };
 }
 
-function applyRequestResubmission(requestDocument, payload, approvers, passengers) {
+function applyRequestResubmission(requestDocument, payload, approvers, passengers, budgetHolder) {
   requestDocument.project = payload.project;
   requestDocument.assignedAreaOfOperation = payload.assignedAreaOfOperation;
   requestDocument.employeeOffice = payload.employeeOffice || requestDocument.employeeOffice || null;
@@ -67,6 +70,15 @@ function applyRequestResubmission(requestDocument, payload, approvers, passenger
   requestDocument.passengers = passengers;
   requestDocument.selected_approver_id = approvers[0]._id;
   requestDocument.selected_approver_ids = approvers.map((approver) => approver._id);
+  requestDocument.selected_budget_holder_id = budgetHolder._id;
+  requestDocument.approvalStage = "budget_holder";
+  requestDocument.budgetHolderDecision = {
+    status: null,
+    decidedBy: null,
+    decidedAt: null,
+    comment: null,
+    signature: null,
+  };
   requestDocument.version += 1;
   requestDocument.status = "pending";
   resetRequestDecision(requestDocument);

@@ -9,12 +9,15 @@ const mongoose = require("mongoose");
 const createApp = require("../src/app");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
+const BudgetHolder = require("../src/models/BudgetHolder");
 const ReimbursementReport = require("../src/models/ReimbursementReport");
 const ExpenseLineItem = require("../src/models/ExpenseLineItem");
 const { hashPassword } = require("../src/services/passwordService");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
 let app;
+let defaultBudgetHolderId;
+let defaultBudgetHolderToken;
 
 async function createUser(overrides = {}) {
   const passwordHash = overrides.passwordHash || (await hashPassword("Password123!"));
@@ -48,6 +51,7 @@ function passengerFor(user) {
 
 function buildRequestPayload(selectedApproverId, overrides = {}) {
   return {
+    selected_budget_holder_id: defaultBudgetHolderId?.toString(),
     selected_approver_id: selectedApproverId,
     project: {
       name: "WE4R",
@@ -100,6 +104,13 @@ function buildReimbursementPayload(travelRequestId, selectedApproverId, override
   };
 }
 
+async function approveBudgetHolderRequest(requestId) {
+  return request(app)
+    .patch(`/api/requests/${requestId}/budget-holder/approve`)
+    .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+    .send({ signature: "Budget Holder Signature" });
+}
+
 async function createApprovedTravelRequest(manager, traveller, booker = traveller) {
   const bookerToken = await login(booker.email);
   const createResponse = await request(app)
@@ -113,6 +124,13 @@ async function createApprovedTravelRequest(manager, traveller, booker = travelle
       })
     );
 
+  if (createResponse.status !== 201) {
+    throw new Error(`Could not create test travel request: ${createResponse.body.message || createResponse.status}`);
+  }
+  const budgetHolderResponse = await approveBudgetHolderRequest(createResponse.body._id);
+  if (budgetHolderResponse.status !== 200) {
+    throw new Error(`Could not approve test budget holder stage: ${budgetHolderResponse.body.message || budgetHolderResponse.status}`);
+  }
   const managerToken = await login(manager.email);
   await request(app)
     .patch(`/api/requests/${createResponse.body._id}/approve`)
@@ -130,6 +148,7 @@ beforeAll(async () => {
 afterEach(async () => {
   await Promise.all([
     User.deleteMany({}),
+    BudgetHolder.deleteMany({}),
     TravelRequest.deleteMany({}),
     ReimbursementReport.deleteMany({}),
     ExpenseLineItem.deleteMany({}),
@@ -139,6 +158,21 @@ afterEach(async () => {
 afterAll(async () => {
   await mongoose.disconnect();
   await stopTestDatabase();
+});
+
+beforeEach(async () => {
+  const budgetHolderUser = await createUser({
+    name: "Budget Holder",
+    email: `budget-holder-${Math.random().toString(36).slice(2)}@example.com`,
+  });
+  defaultBudgetHolderToken = await login(budgetHolderUser.email);
+  const holder = await BudgetHolder.create({
+    name: budgetHolderUser.name,
+    email: budgetHolderUser.email,
+    fundCode: "DEC16",
+    user: budgetHolderUser._id,
+  });
+  defaultBudgetHolderId = holder._id;
 });
 
 describe("reimbursement workflow", () => {

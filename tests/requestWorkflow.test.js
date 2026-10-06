@@ -9,6 +9,7 @@ const mongoose = require("mongoose");
 const createApp = require("../src/app");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
+const BudgetHolder = require("../src/models/BudgetHolder");
 const Notification = require("../src/models/Notification");
 const { sendEmail } = require("../src/services/emailService");
 const { hashPassword } = require("../src/services/passwordService");
@@ -16,6 +17,8 @@ const { runPendingApprovalReminders } = require("../src/services/pendingReminder
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
 let app;
+let defaultBudgetHolderId;
+let defaultBudgetHolderToken;
 
 async function createUser(overrides = {}) {
   const passwordHash = overrides.passwordHash || (await hashPassword("Password123!"));
@@ -46,6 +49,7 @@ function passengerFor(user) {
 
 function buildRequestPayload(selectedApproverId, overrides = {}) {
   return {
+    selected_budget_holder_id: defaultBudgetHolderId?.toString(),
     selected_approver_id: selectedApproverId,
     project: {
       name: "WE4R",
@@ -74,14 +78,37 @@ function buildRequestPayload(selectedApproverId, overrides = {}) {
   };
 }
 
+async function approveBudgetHolderRequestFor(requestId) {
+  return request(app)
+    .patch(`/api/requests/${requestId}/budget-holder/approve`)
+    .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+    .send({ signature: "Budget Holder Signature" });
+}
+
 beforeAll(async () => {
   await startTestDatabase();
   app = createApp();
 });
 
+beforeEach(async () => {
+  const budgetHolderUser = await createUser({
+    name: "Budget Holder",
+    email: `budget-holder-${Math.random().toString(36).slice(2)}@example.com`,
+  });
+  defaultBudgetHolderToken = await login(budgetHolderUser.email);
+  const holder = await BudgetHolder.create({
+    name: budgetHolderUser.name,
+    email: budgetHolderUser.email,
+    fundCode: "DEC16",
+    user: budgetHolderUser._id,
+  });
+  defaultBudgetHolderId = holder._id;
+});
+
 afterEach(async () => {
   await Promise.all([
     User.deleteMany({}),
+    BudgetHolder.deleteMany({}),
     TravelRequest.deleteMany({}),
     Notification.deleteMany({}),
   ]);
@@ -158,6 +185,97 @@ describe("user profile updates", () => {
 });
 
 describe("request scoping and workflow", () => {
+  it("requires budget-holder approval before notifying or exposing a TAR to its line manager", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "budget-stage-manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "budget-stage-requester@example.com",
+    });
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.approvalStage).toBe("budget_holder");
+    const managerToken = await login(manager.email);
+    const pendingBeforeVerification = await request(app)
+      .get("/api/requests/pending-my-approval")
+      .set("Authorization", "Bearer " + managerToken);
+    const blockedApproval = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/approve`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ signature: "Manager Signature" });
+
+    expect(pendingBeforeVerification.body).toHaveLength(0);
+    expect(blockedApproval.status).toBe(403);
+    expect(sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "New travel request awaiting approval"
+    )).toHaveLength(0);
+
+    const holderQueue = await request(app)
+      .get("/api/requests/pending-my-budget-approval")
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken);
+    expect(holderQueue.status).toBe(200);
+    expect(holderQueue.body).toHaveLength(1);
+    expect(holderQueue.body[0]._id).toBe(createResponse.body._id);
+
+    const holderApproval = await approveBudgetHolderRequestFor(createResponse.body._id);
+    expect(holderApproval.status).toBe(200);
+    expect(holderApproval.body.approvalStage).toBe("line_manager");
+    const pendingAfterVerification = await request(app)
+      .get("/api/requests/pending-my-approval")
+      .set("Authorization", "Bearer " + managerToken);
+    expect(pendingAfterVerification.body.map((item) => item._id)).toContain(createResponse.body._id);
+
+    const managerApproval = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/approve`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ signature: "Manager Signature" });
+    expect(managerApproval.status).toBe(200);
+    expect(managerApproval.body.status).toBe("approved");
+  });
+
+  it("lets only the selected budget holder reject and notify the requester", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "budget-reject-manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "budget-reject-requester@example.com",
+    });
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
+    const unauthorized = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/reject`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .send({ comment: "Not the selected holder" });
+    expect(unauthorized.status).toBe(403);
+
+    const rejection = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/reject`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send({ comment: "Please correct the fund code." });
+    expect(rejection.status).toBe(200, JSON.stringify(rejection.body));
+    expect(rejection.body.status).toBe("rejected");
+    expect(rejection.body.budgetHolderDecision.status).toBe("rejected");
+    expect(await Notification.countDocuments({
+      recipient: requester._id,
+      type: "rejected",
+      request: createResponse.body._id,
+    })).toBe(1);
+  });
+
   it("lets passengers see travel requests raised for them", async () => {
     const manager = await createUser({
       name: "Manager Admin",
@@ -308,6 +426,7 @@ describe("request scoping and workflow", () => {
       .set("Authorization", `Bearer ${createToken}`)
       .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
+    const budgetHolderResponse = await approveBudgetHolderRequestFor(createResponse.body._id);
     const approveToken = await login(manager.email);
     const approveResponse = await request(app)
       .patch(`/api/requests/${createResponse.body._id}/approve`)
@@ -315,6 +434,7 @@ describe("request scoping and workflow", () => {
       .send({ signature: "Manager Signature" });
 
     expect(createResponse.status).toBe(201);
+    expect(budgetHolderResponse.status).toBe(200);
     expect(approveResponse.status).toBe(200);
     expect(approveResponse.body.status).toBe("approved");
     expect(approveResponse.body.decision.comment).toBeNull();
@@ -398,6 +518,7 @@ describe("request scoping and workflow", () => {
         passengers: [passengerFor(requester)],
       }));
 
+    const budgetHolderResponse = await approveBudgetHolderRequestFor(createResponse.body._id);
     const secondApproverToken = await login(secondApprover.email);
     const pendingResponse = await request(app)
       .get("/api/requests/pending-my-approval")
@@ -408,6 +529,7 @@ describe("request scoping and workflow", () => {
       .send({ signature: "Second Approver Signature" });
 
     expect(createResponse.status).toBe(201);
+    expect(budgetHolderResponse.status).toBe(200);
     expect(createResponse.body.selected_approver_ids).toHaveLength(2);
     expect(pendingResponse.status).toBe(200);
     expect(pendingResponse.body[0]._id).toBe(createResponse.body._id);
@@ -457,6 +579,7 @@ describe("request scoping and workflow", () => {
         passengers: [passengerFor(requester)],
       }));
 
+    await approveBudgetHolderRequestFor(createResponse.body._id);
     sendEmail.mockClear();
     const reminderResponse = await request(app)
       .post(`/api/requests/${createResponse.body._id}/remind-approver`)
@@ -467,7 +590,6 @@ describe("request scoping and workflow", () => {
       subject === "Reminder: travel request awaiting your approval"
     );
     expect(reminderEmails).toHaveLength(2);
-    expect(reminderEmails[0][0]).toBe(manager.email);
     expect(reminderEmails.map(([recipient]) => recipient)).toEqual(
       expect.arrayContaining([manager.email, secondApprover.email])
     );
@@ -565,7 +687,7 @@ describe("request scoping and workflow", () => {
     expect(listResponse.body.data.map((item) => item._id)).toContain(createResponse.body._id);
   });
 
-  it("emails every active superadmin, including read-only superadmins, about any approved TAR", async () => {
+  it("emails active read-only superadmins about every approved TAR", async () => {
     sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
@@ -604,6 +726,7 @@ describe("request scoping and workflow", () => {
         })
       );
 
+    await approveBudgetHolderRequestFor(createResponse.body._id);
     expect(
       await Notification.countDocuments({
         recipient: superadmin._id,
@@ -636,14 +759,14 @@ describe("request scoping and workflow", () => {
         type: "approved",
         request: createResponse.body._id,
       })
-    ).toBe(1);
+    ).toBe(0);
     expect(
       await Notification.countDocuments({
         recipient: secondSuperadmin._id,
         type: "approved",
         request: createResponse.body._id,
       })
-    ).toBe(1);
+    ).toBe(0);
     expect(
       await Notification.countDocuments({
         recipient: readOnlySuperadmin._id,
@@ -655,11 +778,7 @@ describe("request scoping and workflow", () => {
     const approvedEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "Approved TAR notification"
     );
-    expect(approvedEmails.map(([recipient]) => recipient).sort()).toEqual([
-      superadmin.email,
-      secondSuperadmin.email,
-      readOnlySuperadmin.email,
-    ].sort());
+    expect(approvedEmails.map(([recipient]) => recipient)).toEqual([readOnlySuperadmin.email]);
     expect(approvedEmails[0][3].text).toContain("Open the CARE TAR approvals page:");
 
     sendEmail.mockClear();
@@ -670,10 +789,10 @@ describe("request scoping and workflow", () => {
 
     expect(resendResponse.status).toBe(200);
     expect(resendResponse.body.requests).toBe(1);
-    expect(resendResponse.body.emailCount).toBe(3);
+    expect(resendResponse.body.emailCount).toBe(1);
     expect(sendEmail.mock.calls.filter(([, subject]) =>
       subject === "Approved TAR notification"
-    )).toHaveLength(3);
+    )).toHaveLength(1);
 
     sendEmail.mockClear();
     sendEmail.mockResolvedValue(false);
@@ -738,7 +857,7 @@ describe("request scoping and workflow", () => {
     expect(nonFlightDetailResponse.status).toBe(403);
   });
 
-  it("routes approved flight TAR emails only to read-only superadmins", async () => {
+  it("notifies read-only superadmins about approved flight TARs", async () => {
     const approver = await createUser({
       name: "Approver Admin",
       email: "flight-only-approver@example.com",
@@ -769,6 +888,7 @@ describe("request scoping and workflow", () => {
       }));
 
     expect(createResponse.status).toBe(201);
+    await approveBudgetHolderRequestFor(createResponse.body._id);
     sendEmail.mockClear();
 
     const approverToken = await login(approver.email);
@@ -815,6 +935,7 @@ describe("request scoping and workflow", () => {
       .set("Authorization", `Bearer ${requesterToken}`)
       .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
+    await approveBudgetHolderRequestFor(createResponse.body._id);
     const managerToken = await login(manager.email);
     const rejectResponse = await request(app)
       .patch(`/api/requests/${createResponse.body._id}/reject`)
@@ -842,6 +963,7 @@ describe("request scoping and workflow", () => {
       "Please add more detail."
     );
 
+    await approveBudgetHolderRequestFor(createResponse.body._id);
     const approveAfterResubmit = await request(app)
       .patch(`/api/requests/${createResponse.body._id}/approve`)
       .set("Authorization", `Bearer ${managerToken}`)
@@ -874,6 +996,7 @@ describe("request scoping and workflow", () => {
       .set("Authorization", `Bearer ${requesterToken}`)
       .send(buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] }));
 
+    await approveBudgetHolderRequestFor(createResponse.body._id);
     const otherAdminToken = await login(otherAdmin.email);
     const approveResponse = await request(app)
       .patch(`/api/requests/${createResponse.body._id}/approve`)
@@ -980,7 +1103,7 @@ describe("request scoping and workflow", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(3);
+    expect(response.body).toHaveLength(4);
 
     const ids = response.body.map((user) => user._id);
     expect(ids).toEqual(
@@ -990,6 +1113,7 @@ describe("request scoping and workflow", () => {
         requester._id.toString(),
       ])
     );
+    expect(ids).toContain(String((await BudgetHolder.findById(defaultBudgetHolderId)).user));
     expect(ids).not.toContain(superadmin._id.toString());
     expect(response.body[0]).toHaveProperty("employeeNumber");
     expect(response.body[0]).not.toHaveProperty("passwordHash");

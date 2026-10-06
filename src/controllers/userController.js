@@ -5,6 +5,7 @@ const { hashPassword } = require("../services/passwordService");
 const HttpError = require("../utils/httpError");
 const crypto = require("crypto");
 const { isEmailConfigured, sendTemporaryPasswordEmail } = require("../services/emailService");
+const { listBudgetHolders: getBudgetHolders } = require("../services/budgetHolderService");
 
 function generateTemporaryPassword() {
   return crypto.randomBytes(12).toString("base64url");
@@ -335,6 +336,10 @@ async function listPassengers(req, res) {
   return res.json(passengers);
 }
 
+async function listBudgetHolders(req, res) {
+  return res.json(await getBudgetHolders());
+}
+
 module.exports = {
   getMe,
   updateMe,
@@ -352,4 +357,5 @@ module.exports = {
   deleteUser,
   listApprovers,
   listPassengers,
+  listBudgetHolders,
 };

@@ -8,6 +8,8 @@ const auditLogSchema = new mongoose.Schema(
         "request_created",
         "request_approved",
         "request_rejected",
+        "request_budget_holder_approved",
+        "request_budget_holder_rejected",
         "request_resubmitted",
         "reimbursement_created",
         "reimbursement_updated",

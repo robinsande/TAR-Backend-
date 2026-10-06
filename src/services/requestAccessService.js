@@ -67,8 +67,12 @@ async function buildRequestScope(user, listScope) {
         { "passengers.user": user.id },
         { requestedBy: { $in: directReportIds } },
         { "passengers.user": { $in: directReportIds } },
-        { selected_approver_id: user.id },
-        { selected_approver_ids: user.id },
+        {
+          $and: [
+            { approvalStage: "line_manager" },
+            { $or: [{ selected_approver_id: user.id }, { selected_approver_ids: user.id }] },
+          ],
+        },
       ],
     };
   }
@@ -77,6 +81,11 @@ async function buildRequestScope(user, listScope) {
 }
 
 async function canAccessRequest(user, request) {
+  const budgetHolderUserId = idToString(request.selected_budget_holder_id?.user);
+  if (budgetHolderUserId === user.id) {
+    return true;
+  }
+
   if (user.role === "superadmin") {
     return true;
   }
@@ -124,6 +133,10 @@ function ensureApprover(user, request) {
 
   if (user.role !== "admin" || !approverIds.includes(user.id)) {
     throw new HttpError(403, "Only the assigned approver can perform this action");
+  }
+
+  if (request.approvalStage === "budget_holder") {
+    throw new HttpError(403, "The selected budget holder must approve this request first");
   }
 
   if (requesterId === user.id || isPassengerOnRequest(request, user.id)) {
