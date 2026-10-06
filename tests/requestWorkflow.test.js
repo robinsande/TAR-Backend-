@@ -461,7 +461,7 @@ describe("request scoping and workflow", () => {
   });
 
 
-  it("sends requests directly to the line manager when no budget holder is selected", async () => {
+  it("requires a budget holder when submitting a TAR", async () => {
     const manager = await createUser({
       name: "Manager Admin",
       email: "optional-budget-manager@example.com",
@@ -480,36 +480,11 @@ describe("request scoping and workflow", () => {
         passengers: [passengerFor(requester)],
       }));
 
-    expect(createResponse.status).toBe(201);
-    expect(createResponse.body.selected_budget_holder_id).toBeNull();
-    expect(createResponse.body.approvalStage).toBe("line_manager");
-    const managerNotification = await Notification.findOne({
-      recipient: manager._id,
-      type: "new_request",
-      request: createResponse.body._id,
-    });
-    expect(managerNotification).toBeTruthy();
-    const managerEmail = sendEmail.mock.calls.find(([recipient]) => recipient === manager.email);
-    expect(managerEmail[1]).toBe("New travel request awaiting approval");
-    expect(managerEmail[2]).toContain("<p>Hello Manager Admin,</p>");
-    expect(managerEmail[2]).toContain(
-      "Requester One (optional-budget-requester@example.com) submitted a new travel request to Kisumu for Field monitoring visit. Please review and approve the TAR."
-    );
-    expect(await Notification.countDocuments({
-      recipient: (await BudgetHolder.findById(defaultBudgetHolderId)).user,
-      request: createResponse.body._id,
-    })).toBe(0);
-
-    const managerToken = await login(manager.email);
-    const approval = await request(app)
-      .patch(`/api/requests/${createResponse.body._id}/approve`)
-      .set("Authorization", "Bearer " + managerToken)
-      .send({ signature: "Manager Signature" });
-    expect(approval.status).toBe(200);
-    expect(approval.body.status).toBe("approved");
+    expect(createResponse.status).toBe(400);
+    expect(createResponse.body.errors[0].msg).toMatch(/select a budget holder/i);
   });
 
-  it("keeps resubmitted TARs in the direct-to-manager path when the optional holder is blank", async () => {
+  it("requires a budget holder when resubmitting a TAR", async () => {
     const manager = await createUser({
       name: "Manager Admin",
       email: "optional-resubmit-manager@example.com",
@@ -520,34 +495,23 @@ describe("request scoping and workflow", () => {
       email: "optional-resubmit-requester@example.com",
     });
     const requesterToken = await login(requester.email);
-    const payload = buildRequestPayload(manager._id, {
-      selected_budget_holder_id: "",
-      passengers: [passengerFor(requester)],
-    });
+    const payload = buildRequestPayload(manager._id, { passengers: [passengerFor(requester)] });
     const createResponse = await request(app)
       .post("/api/requests")
       .set("Authorization", "Bearer " + requesterToken)
       .send(payload);
-    const managerToken = await login(manager.email);
     const rejection = await request(app)
-      .patch(`/api/requests/${createResponse.body._id}/reject`)
-      .set("Authorization", "Bearer " + managerToken)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/reject`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
       .send({ comment: "Please update trip details." });
     expect(rejection.status).toBe(200);
 
     const resubmission = await request(app)
       .patch(`/api/requests/${createResponse.body._id}`)
       .set("Authorization", "Bearer " + requesterToken)
-      .send({ ...payload, purposeOfTrip: "Updated field visit" });
-    expect(resubmission.status).toBe(200);
-    expect(resubmission.body.approvalStage).toBe("line_manager");
-    expect(resubmission.body.selected_budget_holder_id).toBeNull();
-    const managerNotification = await Notification.findOne({
-      recipient: manager._id,
-      type: "resubmitted",
-      request: createResponse.body._id,
-    });
-    expect(managerNotification).toBeTruthy();
+      .send({ ...payload, selected_budget_holder_id: "", purposeOfTrip: "Updated field visit" });
+    expect(resubmission.status).toBe(400);
+    expect(resubmission.body.errors[0].msg).toMatch(/select a budget holder/i);
   });
 
   it("lets passengers see travel requests raised for them", async () => {

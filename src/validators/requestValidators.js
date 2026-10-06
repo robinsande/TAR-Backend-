@@ -6,9 +6,8 @@ function isIsoDate(value) {
 
 const travelRequestBaseValidators = [
   body("selected_budget_holder_id")
-    .optional({ checkFalsy: true })
     .isMongoId()
-    .withMessage("Select a valid budget holder"),
+    .withMessage("Select a budget holder before submitting this TAR"),
   body("selected_approver_id").optional().isMongoId().withMessage("A valid selected approver ID is required"),
   body("selected_approver_ids")
     .optional()

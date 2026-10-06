@@ -81,43 +81,45 @@ async function listBudgetHolders() {
   const users = await User.find({
     isActive: true,
     role: "approver_budget_holder",
-  }).select("_id name email").lean();
-  if (users.length) {
-    await BudgetHolder.bulkWrite(
-      users.map((user) => ({
-        updateOne: {
-          filter: { email: user.email },
-          update: {
-            $set: {
-              name: user.name,
-              email: user.email,
-              user: user._id,
-              isActive: true,
-            },
-          },
-          upsert: true,
-        },
-      }))
-    );
-  }
+  }).select("_id name email").sort({ name: 1, email: 1 }).lean();
+  if (!users.length) return [];
 
-  const holders = await BudgetHolder.find({ isActive: true })
-    .populate({
-      path: "user",
-      match: { isActive: true, role: "approver_budget_holder" },
-      select: "email",
+  const userIds = users.map((user) => user._id);
+  const userById = new Map(users.map((user) => [String(user._id), user]));
+
+  await BudgetHolder.bulkWrite(
+    users.map((user) => ({
+      updateOne: {
+        filter: { email: user.email },
+        update: {
+          $set: {
+            name: user.name,
+            email: user.email,
+            user: user._id,
+            isActive: true,
+          },
+        },
+        upsert: true,
+      },
+    }))
+  );
+
+  const holders = await BudgetHolder.find({
+    user: { $in: userIds },
+    isActive: true,
+  }).select("_id user").lean();
+  const holderByUserId = new Map();
+  holders.forEach((holder) => {
+    const userId = String(holder.user);
+    if (!holderByUserId.has(userId)) holderByUserId.set(userId, holder);
+  });
+
+  return users
+    .map((user) => {
+      const holder = holderByUserId.get(String(user._id));
+      return holder ? { _id: holder._id, name: user.name, email: user.email } : null;
     })
-    .sort({ name: 1, email: 1 })
-    .lean();
-  const seenEmails = new Set();
-  return holders
-    .filter((holder) => {
-      const email = holder.email.toLowerCase();
-      if (!holder.user || seenEmails.has(email)) return false;
-      seenEmails.add(email);
-      return true;
-    })
-    .map(({ _id, name, email }) => ({ _id, name, email }));
+    .filter(Boolean);
 }
 
 module.exports = {

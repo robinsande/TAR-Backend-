@@ -52,6 +52,10 @@ async function createRequest(req, res) {
     throw new HttpError(404, "Requester not found");
   }
 
+  if (!req.body.selected_budget_holder_id) {
+    throw new HttpError(400, "Select a budget holder before submitting this TAR");
+  }
+
   const budgetHolder = req.body.selected_budget_holder_id
     ? await BudgetHolder.findOne({
       _id: req.body.selected_budget_holder_id,
@@ -531,6 +535,10 @@ async function resubmitRequest(req, res) {
 
   if (!["pending", "rejected"].includes(requestDocument.status)) {
     throw new HttpError(400, "Only pending or rejected requests can be edited");
+  }
+
+  if (!req.body.selected_budget_holder_id) {
+    throw new HttpError(400, "Select a budget holder before resubmitting this TAR");
   }
 
   const passengers = await resolvePassengers(req.body.passengers);

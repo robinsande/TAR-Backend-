@@ -94,6 +94,7 @@ describe("budget holder imports", () => {
     const users = await User.create([
       { name: "Line Manager", email: "manager@example.com", role: "admin", isActive: true },
       { name: "Staff User", email: "staff-only@example.com", role: "user", isActive: true },
+      { name: "Dual Role Holder", email: "dual@example.com", role: "approver_budget_holder", isActive: true },
       { name: "Inactive Combined Role", email: "inactive@example.com", role: "approver_budget_holder", isActive: false },
       { name: "Superadmin", email: "superadmin@example.com", role: "superadmin", isActive: true },
       { name: "Read Only", email: "readonly@example.com", role: "super_superadmin", isActive: true },
@@ -103,7 +104,12 @@ describe("budget holder imports", () => {
       { name: "Staff User", email: users[1].email, user: users[1]._id },
     ]);
 
-    expect(await listBudgetHolders()).toEqual([]);
+    const holders = await listBudgetHolders();
+    expect(holders).toHaveLength(1);
+    expect(holders[0]).toMatchObject({
+      name: "Dual Role Holder",
+      email: "dual@example.com",
+    });
   });
 
   it("rejects imports for users who do not have the combined role", async () => {
