@@ -523,8 +523,10 @@ function buildTravelRequestPdf(res, requestDocument) {
         { width: 0.80, value: budgetHolder.email },
       ], height: 24 },
       { cells: [
-        { width: 0.20, value: "Budget Holder Signature:", bold: true },
-        { width: 0.80, value: budgetHolderDecision.signature ? "" : "____________________________", image: budgetHolderDecision.signature },
+        { width: 0.20, value: "Budget Holder Review:", bold: true },
+        { width: 0.30, value: `Print Name:\n${budgetHolderDecision.decidedBy?.name || budgetHolder.name || ""}` },
+        { width: 0.20, value: "Signature:", bold: true },
+        { width: 0.30, value: budgetHolderDecision.signature ? "" : "____________________________", image: budgetHolderDecision.signature },
       ], height: 40 },
       { cells: [
         { width: 0.15, value: "Project ID:", bold: true },

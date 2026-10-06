@@ -228,6 +228,17 @@ describe("request scoping and workflow", () => {
 
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.approvalStage).toBe("budget_holder");
+    const budgetHolder = await BudgetHolder.findById(defaultBudgetHolderId);
+    const budgetHolderEmail = sendEmail.mock.calls.find(
+      ([recipient]) => recipient === budgetHolder.email
+    );
+    expect(budgetHolderEmail[2]).toContain("<p>Dear Budget Holder,</p>");
+    expect(budgetHolderEmail[2]).toContain(
+      "Requester One has submitted a TAR, capturing the relevant charging details, for your review and approval."
+    );
+    expect(budgetHolderEmail[3].text).toContain(
+      "Requester One has submitted a TAR, capturing the relevant charging details, for your review and approval."
+    );
     const managerToken = await login(manager.email);
     const pendingBeforeVerification = await request(app)
       .get("/api/requests/pending-my-approval")
@@ -364,7 +375,7 @@ describe("request scoping and workflow", () => {
     expect(createResponse.status).toBe(201);
     const initialEmails = sendEmail.mock.calls.filter(([recipient]) => recipient === holder.email);
     expect(initialEmails.map(([, subject]) => subject)).toEqual([
-      "TAR awaiting your fund-code review",
+      "TAR awaiting your review and approval",
     ]);
 
     const budgetApproval = await request(app)
@@ -387,7 +398,7 @@ describe("request scoping and workflow", () => {
 
     const approvalEmails = sendEmail.mock.calls.filter(([recipient]) => recipient === holder.email);
     expect(approvalEmails.map(([, subject]) => subject)).toEqual([
-      "TAR awaiting your fund-code review",
+      "TAR awaiting your review and approval",
     ]);
     const managerQueue = await request(app)
       .get("/api/requests/pending-my-approval")
@@ -430,6 +441,12 @@ describe("request scoping and workflow", () => {
       request: createResponse.body._id,
     });
     expect(managerNotification).toBeTruthy();
+    const managerEmail = sendEmail.mock.calls.find(([recipient]) => recipient === manager.email);
+    expect(managerEmail[1]).toBe("New travel request awaiting approval");
+    expect(managerEmail[2]).toContain("<p>Hello Manager Admin,</p>");
+    expect(managerEmail[2]).toContain(
+      "Requester One (optional-budget-requester@example.com) submitted a new travel request to Kisumu for Field monitoring visit. Please review and approve the TAR."
+    );
     expect(await Notification.countDocuments({
       recipient: (await BudgetHolder.findById(defaultBudgetHolderId)).user,
       request: createResponse.body._id,

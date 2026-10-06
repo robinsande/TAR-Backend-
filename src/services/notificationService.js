@@ -4,10 +4,10 @@ const BudgetHolder = require("../models/BudgetHolder");
 const { sendEmail } = require("./emailService");
 const { loadPassengerUsers } = require("./passengerService");
 
-function buildNotificationEmail(recipientName, message, entityLabel, entityId) {
+function buildNotificationEmail(recipientName, message, entityLabel, entityId, greeting = "Hello") {
   const approvalUrl = getApprovalsUrl();
   return `
-    <p>Hello ${recipientName},</p>
+    <p>${greeting} ${recipientName},</p>
     <p>${message}</p>
     <p>${entityLabel}: ${entityId}</p>
     <p><a href="${approvalUrl}">Open the CARE TAR approvals page</a></p>
@@ -27,6 +27,7 @@ async function createAndSendNotification({
   reimbursementId = null,
   replyTo = null,
   from = null,
+  greeting = "Hello",
   entityLabel,
   entityId,
 }) {
@@ -38,11 +39,11 @@ async function createAndSendNotification({
     message,
   });
 
-  const html = buildNotificationEmail(recipient.name, message, entityLabel, entityId);
+  const html = buildNotificationEmail(recipient.name, message, entityLabel, entityId, greeting);
   const emailOptions = {
     ...(replyTo ? { replyTo } : {}),
     ...(from ? { from } : {}),
-    text: `Hello ${recipient.name},\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${getApprovalsUrl()}`,
+    text: `${greeting} ${recipient.name},\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${getApprovalsUrl()}`,
   };
   const emailSent = await sendEmail(recipient.email, subject, html, emailOptions);
 
@@ -101,15 +102,15 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
   }
 
   if (audience === "budget_holder") {
-    const fundCode = extras.budgetHolder?.fundCode || requestDocument.project?.fundCode || "the submitted fund code";
+    const requesterName = requester?.name || requestDocument.requestedBy?.name || "A staff member";
     return type === "approval_reminder"
       ? {
-          subject: "Reminder: TAR awaiting your fund-code review",
-          message: `${requesterLabel} is reminding you to review the fund code ${fundCode} on the TAR for ${destination} before it proceeds to the line manager.`,
+          subject: "Reminder: TAR awaiting your review and approval",
+          message: `${requesterName} is reminding you to review and approve the TAR for ${destination} before it proceeds to the line manager.`,
         }
       : {
-          subject: "TAR awaiting your fund-code review",
-          message: `${requesterLabel} submitted a TAR for ${destination} and selected you to verify fund code ${fundCode}. Please approve or reject it before it proceeds to the line manager.`,
+          subject: "TAR awaiting your review and approval",
+          message: `${requesterName} has submitted a TAR, capturing the relevant charging details, for your review and approval.`,
         };
   }
 
@@ -223,6 +224,7 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
     subject: content.subject,
     requestId: requestDocument._id,
     replyTo: ["approver", "flight_booking", "budget_holder"].includes(audience) ? requesterEmail : null,
+    greeting: audience === "budget_holder" ? "Dear" : "Hello",
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });
