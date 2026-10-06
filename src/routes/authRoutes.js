@@ -1,13 +1,21 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const asyncHandler = require("../utils/asyncHandler");
-const { login, activateAccount, setPassword } = require("../controllers/authController");
+const {
+  login,
+  setupMfa,
+  verifyMfa,
+  activateAccount,
+  setPassword,
+} = require("../controllers/authController");
 const {
   loginValidator,
   activateAccountValidator,
   setPasswordValidator,
+  verifyMfaValidator,
 } = require("../validators/authValidators");
 const { validationErrorHandler } = require("../middleware/errorHandler");
+const { authenticate } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
@@ -20,9 +28,26 @@ const authLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === "test",
 });
 
+const mfaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many authenticator attempts. Please try again later." },
+  skip: () => process.env.NODE_ENV === "test",
+});
+
 router.use(authLimiter);
 
 router.post("/login", ...loginValidator, validationErrorHandler, asyncHandler(login));
+router.post("/mfa/setup", mfaLimiter, asyncHandler(setupMfa));
+router.post(
+  "/mfa/verify",
+  mfaLimiter,
+  verifyMfaValidator,
+  validationErrorHandler,
+  asyncHandler(verifyMfa)
+);
 router.post(
   "/activate",
   ...activateAccountValidator,
@@ -31,6 +56,7 @@ router.post(
 );
 router.post(
   "/set-password",
+  authenticate,
   ...setPasswordValidator,
   validationErrorHandler,
   asyncHandler(setPassword)

@@ -19,8 +19,12 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new HttpError(401, "Invalid or expired token");
   }
 
+  if (payload.tokenType !== "session") {
+    throw new HttpError(401, "Complete authenticator verification to access the system");
+  }
+
   const user = await User.findById(payload.userId).select(
-    "-passwordHash -inviteToken -inviteTokenExpires"
+    "-passwordHash -inviteToken -inviteTokenExpires -mfaSecretEncrypted -mfaPendingSecretEncrypted -mfaChallengeId"
   );
 
   if (!user || !user.isActive) {

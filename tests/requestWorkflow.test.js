@@ -15,6 +15,7 @@ const { sendEmail } = require("../src/services/emailService");
 const { hashPassword } = require("../src/services/passwordService");
 const { runPendingApprovalReminders } = require("../src/services/pendingReminderScheduler");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
+const { loginWithMfa } = require("./mfaTestHelper");
 
 let app;
 let defaultBudgetHolderId;
@@ -35,8 +36,7 @@ async function createUser(overrides = {}) {
 }
 
 async function login(email, password = "Password123!") {
-  const response = await request(app).post("/api/auth/login").send({ email, password });
-  return response.body.token;
+  return loginWithMfa(app, email, password);
 }
 
 function passengerFor(user) {
@@ -121,7 +121,7 @@ afterAll(async () => {
 });
 
 describe("authentication and authorization", () => {
-  it("logs a user in and returns a JWT token", async () => {
+  it("requires authenticator enrollment before returning a JWT token", async () => {
     const user = await createUser({
       name: "Alice User",
       email: "alice@example.com",
@@ -133,8 +133,54 @@ describe("authentication and authorization", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.token).toBeTruthy();
-    expect(response.body.user.email).toBe(user.email);
+    expect(response.body.mfaSetupRequired).toBe(true);
+    expect(response.body.token).toBeUndefined();
+    expect(await login(user.email)).toBeTruthy();
+  });
+
+  it("exports all TARs matching the filters as a single multi-page PDF", async () => {
+    const requester = await createUser({
+      name: "TAR Export Requester",
+      email: "tar-export-requester@example.com",
+    });
+    const manager = await createUser({
+      name: "TAR Export Manager",
+      email: "tar-export-manager@example.com",
+      role: "admin",
+    });
+    const requesterToken = await login(requester.email);
+
+    for (let index = 0; index < 2; index += 1) {
+      const createResponse = await request(app)
+        .post("/api/requests")
+        .set("Authorization", `Bearer ${requesterToken}`)
+        .send(buildRequestPayload(manager._id, {
+          passengers: [passengerFor(requester)],
+          purposeOfTrip: "TAR export matching purpose",
+        }));
+      expect(createResponse.status).toBe(201);
+    }
+
+    const superadmin = await createUser({
+      name: "TAR Export Superadmin",
+      email: "tar-export-superadmin@example.com",
+      role: "superadmin",
+    });
+    const superadminToken = await login(superadmin.email);
+    const response = await request(app)
+      .get("/api/requests/export/pdf?scope=all&search=TAR%20export%20matching%20purpose")
+      .set("Authorization", `Bearer ${superadminToken}`)
+      .buffer()
+      .parse((stream, callback) => {
+        const chunks = [];
+        stream.on("data", (chunk) => chunks.push(chunk));
+        stream.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toMatch(/application\/pdf/);
+    expect(response.headers["content-disposition"]).toMatch(/travel-requests-/);
+    expect(response.body.toString("latin1")).toMatch(/\/Count 2\b/);
   });
 
   it("blocks a user from the superadmin user listing route", async () => {

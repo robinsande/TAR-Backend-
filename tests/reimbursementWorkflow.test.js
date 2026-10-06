@@ -14,6 +14,7 @@ const ReimbursementReport = require("../src/models/ReimbursementReport");
 const ExpenseLineItem = require("../src/models/ExpenseLineItem");
 const { hashPassword } = require("../src/services/passwordService");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
+const { loginWithMfa } = require("./mfaTestHelper");
 
 let app;
 let defaultBudgetHolderId;
@@ -37,8 +38,7 @@ async function createUser(overrides = {}) {
 }
 
 async function login(email, password = "Password123!") {
-  const response = await request(app).post("/api/auth/login").send({ email, password });
-  return response.body.token;
+  return loginWithMfa(app, email, password);
 }
 
 function passengerFor(user) {

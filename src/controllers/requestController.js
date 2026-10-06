@@ -12,7 +12,10 @@ const {
 const { createAuditLog } = require("../services/auditLogService");
 const { getEligibleApproverById } = require("../services/approverService");
 const { resolvePassengers, getPassengerUserIds, isPassengerOnRequest } = require("../services/passengerService");
-const { buildTravelRequestPdf } = require("../services/pdfService");
+const {
+  buildTravelRequestPdf,
+  buildTravelRequestsPdf,
+} = require("../services/pdfService");
 const { uploadDirectory } = require("../middleware/requestUpload");
 const { storeAttachment, streamAttachment, deleteAttachment } = require("../services/attachmentStorageService");
 const {
@@ -134,6 +137,18 @@ async function listRequests(req, res) {
   ]);
 
   return res.json(buildPaginatedResponse(requests, total, pagination));
+}
+
+async function downloadTravelRequestsPdf(req, res) {
+  const requests = await getTravelRequestPopulateQuery(
+    TravelRequest.find(req.requestScope).sort({ createdAt: -1 })
+  );
+
+  if (!requests.length) {
+    throw new HttpError(404, "No travel requests match the selected filters");
+  }
+
+  return buildTravelRequestsPdf(res, requests);
 }
 
 async function remindApprover(req, res) {
@@ -763,6 +778,7 @@ async function rerouteApproval(req, res) {
 module.exports = {
   createRequest,
   listRequests,
+  downloadTravelRequestsPdf,
   remindApprover,
   remindAllPendingApprovers,
   getRequestById,

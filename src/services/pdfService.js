@@ -460,7 +460,7 @@ function getPassengerNumbers(requestDocument) {
     .filter(Boolean);
 }
 
-function buildTravelRequestPdf(res, requestDocument) {
+function drawTravelRequestPdfPage(doc, requestDocument) {
   const project = requestDocument.project || {};
   const itinerary = requestDocument.itinerary || {};
   const mode = requestDocument.modeOfTravel || {};
@@ -474,7 +474,6 @@ function buildTravelRequestPdf(res, requestDocument) {
   const passengerNames = getPassengerNames(requestDocument);
   const passengerNumbers = getPassengerNumbers(requestDocument);
 
-  streamPdf(res, `travel-request-${requestDocument._id}.pdf`, (doc) => {
     const office = requestDocument.employeeOffice || requester.office;
     const tripDate = formatDate(requestDocument.submittedAt);
     const travelMode = [
@@ -630,6 +629,23 @@ function buildTravelRequestPdf(res, requestDocument) {
       .fillColor("#000000")
       .text(`Request ID: ${requestDocument._id}    Approved/Reviewed by: ${approver.name || "—"}`, PAGE.margin, doc.y + 3);
     doc.font("Helvetica").fontSize(7).text("Page 1 of 1", PAGE.margin, PAGE.height - PAGE.margin - 10, { width: contentWidth(), align: "center" });
+}
+
+function buildTravelRequestPdf(res, requestDocument) {
+  streamPdf(res, `travel-request-${requestDocument._id}.pdf`, (doc) => {
+    drawTravelRequestPdfPage(doc, requestDocument);
+  });
+}
+
+function buildTravelRequestsPdf(res, requestDocuments) {
+  const date = new Date().toISOString().slice(0, 10);
+  streamPdf(res, `travel-requests-${date}.pdf`, (doc) => {
+    requestDocuments.forEach((requestDocument, index) => {
+      if (index > 0) {
+        doc.addPage();
+      }
+      drawTravelRequestPdfPage(doc, requestDocument);
+    });
   });
 }
 
@@ -965,5 +981,6 @@ function buildReimbursementPdf(res, report) {
 
 module.exports = {
   buildTravelRequestPdf,
+  buildTravelRequestsPdf,
   buildReimbursementPdf,
 };

@@ -12,6 +12,11 @@ const { hashPassword } = require("../src/services/passwordService");
 const { signToken } = require("../src/services/jwtService");
 const { generateInviteToken, getInviteTokenExpiry } = require("../src/services/inviteTokenService");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
+const {
+  decryptAuthenticatorSecret,
+  generateTotpCode,
+} = require("../src/services/mfaService");
+const { loginWithMfa } = require("./mfaTestHelper");
 
 let app;
 
@@ -153,7 +158,8 @@ describe("account activation", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.token).toBeTruthy();
+    expect(response.body.token).toBeUndefined();
+    expect(response.body.message).toMatch(/authenticator/i);
     expect(response.body.user.mustSetPassword).toBe(false);
 
     const loginResponse = await request(app).post("/api/auth/login").send({
@@ -162,9 +168,11 @@ describe("account activation", () => {
     });
 
     expect(loginResponse.status).toBe(200);
+    expect(loginResponse.body.mfaSetupRequired).toBe(true);
+    expect(loginResponse.body.token).toBeUndefined();
   });
 
-  it("allows staff with a password to sign in without an activation link", async () => {
+  it("requires authenticator enrollment for staff signing in with a password", async () => {
     await User.create({
       name: "Alice User",
       email: "alice@example.com",
@@ -180,8 +188,89 @@ describe("account activation", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.token).toBeTruthy();
-    expect(response.body.user.mustSetPassword).toBe(true);
+    expect(response.body.mfaSetupRequired).toBe(true);
+    expect(response.body.token).toBeUndefined();
+  });
+
+  it("requires an authenticator code at every sign-in after initial enrollment", async () => {
+    await User.create({
+      name: "MFA User",
+      email: "mfa@example.com",
+      role: "user",
+      isActive: true,
+      passwordHash: await hashPassword("SecurePass123!"),
+    });
+
+    const firstLogin = await request(app).post("/api/auth/login").send({
+      email: "mfa@example.com",
+      password: "SecurePass123!",
+    });
+    expect(firstLogin.status).toBe(200);
+    expect(firstLogin.body.mfaSetupRequired).toBe(true);
+    expect(firstLogin.body.token).toBeUndefined();
+
+    const challengeHeader = { Authorization: `Bearer ${firstLogin.body.challengeToken}` };
+    const blockedSession = await request(app)
+      .get("/api/users")
+      .set(challengeHeader);
+    expect(blockedSession.status).toBe(401);
+
+    const setup = await request(app)
+      .post("/api/auth/mfa/setup")
+      .set(challengeHeader);
+    expect(setup.status).toBe(200);
+    expect(setup.body.qrCodeDataUrl).toMatch(/^data:image\/png;base64,/);
+
+    const pendingUser = await User.findOne({ email: "mfa@example.com" })
+      .select("+mfaPendingSecretEncrypted");
+    expect(pendingUser.mfaEnabled).toBe(false);
+    expect(pendingUser.mfaPendingSecretEncrypted).not.toBe(setup.body.manualEntryKey);
+
+    const wrongCode = generateTotpCode(setup.body.manualEntryKey) === "000000"
+      ? "000001"
+      : "000000";
+    const badCode = await request(app)
+      .post("/api/auth/mfa/verify")
+      .set(challengeHeader)
+      .send({ code: wrongCode });
+    expect(badCode.status).toBe(401);
+
+    const enrollment = await request(app)
+      .post("/api/auth/mfa/verify")
+      .set(challengeHeader)
+      .send({ code: generateTotpCode(setup.body.manualEntryKey) });
+    expect(enrollment.status).toBe(200);
+    expect(enrollment.body.token).toBeTruthy();
+
+    const enrolledUser = await User.findOne({ email: "mfa@example.com" })
+      .select("+mfaSecretEncrypted +mfaPendingSecretEncrypted");
+    expect(enrolledUser.mfaEnabled).toBe(true);
+    expect(enrolledUser.mfaPendingSecretEncrypted).toBeNull();
+    const secret = decryptAuthenticatorSecret(enrolledUser.mfaSecretEncrypted);
+    expect(secret).toBe(setup.body.manualEntryKey);
+
+    const secondLogin = await request(app).post("/api/auth/login").send({
+      email: "mfa@example.com",
+      password: "SecurePass123!",
+    });
+    expect(secondLogin.status).toBe(200);
+    expect(secondLogin.body.mfaRequired).toBe(true);
+    expect(secondLogin.body.mfaSetupRequired).toBe(false);
+    expect(secondLogin.body.token).toBeUndefined();
+
+    const secondChallenge = { Authorization: `Bearer ${secondLogin.body.challengeToken}` };
+    const verified = await request(app)
+      .post("/api/auth/mfa/verify")
+      .set(secondChallenge)
+      .send({ code: generateTotpCode(secret) });
+    expect(verified.status).toBe(200);
+    expect(verified.body.token).toBeTruthy();
+
+    const replayedChallenge = await request(app)
+      .post("/api/auth/mfa/verify")
+      .set(secondChallenge)
+      .send({ code: generateTotpCode(secret) });
+    expect(replayedChallenge.status).toBe(401);
   });
 });
 
@@ -196,8 +285,10 @@ describe("set password", () => {
       passwordHash: await hashPassword("TempPass123!"),
     });
 
-    const response = await request(app).post("/api/auth/set-password").send({
-      email: "alice@example.com",
+    const token = await loginWithMfa(app, "alice@example.com", "TempPass123!");
+    const response = await request(app).post("/api/auth/set-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
       currentPassword: "TempPass123!",
       newPassword: "NewSecure123!",
     });
@@ -211,6 +302,7 @@ describe("set password", () => {
     });
 
     expect(loginResponse.status).toBe(200);
+    expect(loginResponse.body.mfaRequired).toBe(true);
   });
 
   it("rejects password updates when the current password is wrong", async () => {
@@ -223,8 +315,10 @@ describe("set password", () => {
       passwordHash: await hashPassword("TempPass123!"),
     });
 
-    const response = await request(app).post("/api/auth/set-password").send({
-      email: "alice@example.com",
+    const token = await loginWithMfa(app, "alice@example.com", "TempPass123!");
+    const response = await request(app).post("/api/auth/set-password")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
       currentPassword: "WrongPass123!",
       newPassword: "NewSecure123!",
     });

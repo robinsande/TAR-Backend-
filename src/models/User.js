@@ -23,6 +23,29 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    mfaEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    mfaSecretEncrypted: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    mfaPendingSecretEncrypted: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    mfaChallengeId: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    mfaEnabledAt: {
+      type: Date,
+      default: null,
+    },
     passwordExpiresAt: {
       type: Date,
       default: null,

@@ -15,6 +15,7 @@ const {
 const {
   createRequest,
   listRequests,
+  downloadTravelRequestsPdf,
   getRequestById,
   remindApprover,
   remindAllPendingApprovers,
@@ -72,6 +73,12 @@ router.post(
   asyncHandler(createRequest)
 );
 
+router.get(
+  "/export/pdf",
+  requireRole("superadmin", "super_superadmin"),
+  scopeRequestQuery,
+  asyncHandler(downloadTravelRequestsPdf)
+);
 router.get("/", scopeRequestQuery, asyncHandler(listRequests));
 router.get("/:id", asyncHandler(getRequestById));
 
