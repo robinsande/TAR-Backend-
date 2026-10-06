@@ -4,10 +4,10 @@ const BudgetHolder = require("../models/BudgetHolder");
 const { sendEmail } = require("./emailService");
 const { loadPassengerUsers } = require("./passengerService");
 
-function buildNotificationEmail(recipientName, message, entityLabel, entityId, greeting = "Hello") {
+function buildNotificationEmail(recipientName, message, entityLabel, entityId, greeting = "Hello", greetingPunctuation = ",") {
   const approvalUrl = getApprovalsUrl();
   return `
-    <p>${greeting} ${recipientName},</p>
+    <p>${greeting} ${recipientName}${greetingPunctuation}</p>
     <p>${message}</p>
     <p>${entityLabel}: ${entityId}</p>
     <p><a href="${approvalUrl}">Open the CARE TAR approvals page</a></p>
@@ -28,6 +28,7 @@ async function createAndSendNotification({
   replyTo = null,
   from = null,
   greeting = "Hello",
+  greetingPunctuation = ",",
   entityLabel,
   entityId,
 }) {
@@ -39,11 +40,18 @@ async function createAndSendNotification({
     message,
   });
 
-  const html = buildNotificationEmail(recipient.name, message, entityLabel, entityId, greeting);
+  const html = buildNotificationEmail(
+    recipient.name,
+    message,
+    entityLabel,
+    entityId,
+    greeting,
+    greetingPunctuation
+  );
   const emailOptions = {
     ...(replyTo ? { replyTo } : {}),
     ...(from ? { from } : {}),
-    text: `${greeting} ${recipient.name},\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${getApprovalsUrl()}`,
+    text: `${greeting} ${recipient.name}${greetingPunctuation}\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${getApprovalsUrl()}`,
   };
   const emailSent = await sendEmail(recipient.email, subject, html, emailOptions);
 
@@ -225,6 +233,7 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
     requestId: requestDocument._id,
     replyTo: ["approver", "flight_booking", "budget_holder"].includes(audience) ? requesterEmail : null,
     greeting: audience === "budget_holder" ? "Dear" : "Hello",
+    greetingPunctuation: audience === "budget_holder" ? ";" : ",",
     entityLabel: "Request ID",
     entityId: requestDocument._id,
   });

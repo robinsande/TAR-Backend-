@@ -232,9 +232,12 @@ describe("request scoping and workflow", () => {
     const budgetHolderEmail = sendEmail.mock.calls.find(
       ([recipient]) => recipient === budgetHolder.email
     );
-    expect(budgetHolderEmail[2]).toContain("<p>Dear Budget Holder,</p>");
+    expect(budgetHolderEmail[2]).toContain("<p>Dear Budget Holder;</p>");
     expect(budgetHolderEmail[2]).toContain(
       "Requester One has submitted a TAR, capturing the relevant charging details, for your review and approval."
+    );
+    expect(budgetHolderEmail[3].text).toContain(
+      "Dear Budget Holder;\n\n"
     );
     expect(budgetHolderEmail[3].text).toContain(
       "Requester One has submitted a TAR, capturing the relevant charging details, for your review and approval."
