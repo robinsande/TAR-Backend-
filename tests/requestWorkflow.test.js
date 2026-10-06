@@ -94,6 +94,7 @@ beforeEach(async () => {
   const budgetHolderUser = await createUser({
     name: "Budget Holder",
     email: `budget-holder-${Math.random().toString(36).slice(2)}@example.com`,
+    role: "approver_budget_holder",
   });
   defaultBudgetHolderToken = await login(budgetHolderUser.email);
   const holder = await BudgetHolder.create({
@@ -175,6 +176,50 @@ describe("user profile updates", () => {
     expect(update.status).toBe(200);
     expect(update.body.role).toBe("approver_budget_holder");
     expect(approvers.body.map((user) => user._id)).toContain(account._id.toString());
+  });
+
+  it("lets combined-role requesters select admin and combined-role counterpart approvers", async () => {
+    const requester = await createUser({
+      name: "Approver Budget Holder Requester",
+      email: "combined-requester@example.com",
+      role: "approver_budget_holder",
+    });
+    const manager = await createUser({
+      name: "Line Manager Counterpart",
+      email: "manager-counterpart@example.com",
+      role: "admin",
+    });
+    const budgetHolder = await createUser({
+      name: "Budget Holder Counterpart",
+      email: "holder-counterpart@example.com",
+      role: "approver_budget_holder",
+    });
+    const budgetHolderRecord = await BudgetHolder.create({
+      name: budgetHolder.name,
+      email: budgetHolder.email,
+      user: budgetHolder._id,
+    });
+    const token = await login(requester.email);
+
+    const approversResponse = await request(app)
+      .get("/api/users/approvers")
+      .set("Authorization", "Bearer " + token);
+    expect(approversResponse.body.map((approver) => String(approver._id)))
+      .toEqual(expect.arrayContaining([String(manager._id), String(budgetHolder._id)]));
+
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + token)
+      .send(buildRequestPayload(manager._id, {
+        selected_budget_holder_id: String(budgetHolderRecord._id),
+        passengers: [passengerFor(requester)],
+      }));
+
+    expect(createResponse.status).toBe(201);
+    expect(String(createResponse.body.selected_budget_holder_id._id))
+      .toBe(String(budgetHolderRecord._id));
+    expect(String(createResponse.body.selected_approver_id._id))
+      .toBe(String(manager._id));
   });
 
   it("preserves a designated manager stored by name and email when managerId is omitted", async () => {
@@ -548,7 +593,7 @@ describe("request scoping and workflow", () => {
     expect(passengerNotifications[0].message).toMatch(/listed as a passenger/i);
   });
 
-  it("allows staff to select any active admin as their approver", async () => {
+  it("allows staff to select an active admin or combined-role counterpart as approver", async () => {
     const seniorManager = await createUser({
       name: "Senior Manager",
       email: "senior@example.com",
@@ -1299,8 +1344,11 @@ describe("request scoping and workflow", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(1);
-    expect(response.body[0]._id).toBe(admin._id.toString());
+    expect(response.body.map((approver) => approver._id)).toEqual(
+      expect.arrayContaining([admin._id.toString()])
+    );
+    expect(response.body.some((approver) => approver.role === "superadmin")).toBe(false);
+    expect(response.body.some((approver) => approver.role === "approver_budget_holder")).toBe(true);
   });
 
   it("lists eligible passengers for authenticated users", async () => {

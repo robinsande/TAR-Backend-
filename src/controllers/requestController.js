@@ -58,8 +58,11 @@ async function createRequest(req, res) {
       isActive: true,
     }).populate("user")
     : null;
-  if (req.body.selected_budget_holder_id && (!budgetHolder || !budgetHolder.user?.isActive)) {
-    throw new HttpError(400, "Select an active budget holder with an active system account");
+  if (
+    req.body.selected_budget_holder_id &&
+    (!budgetHolder || !budgetHolder.user?.isActive || budgetHolder.user.role !== "approver_budget_holder")
+  ) {
+    throw new HttpError(400, "Select an active account with the Approver / Budget Holder role");
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
@@ -537,8 +540,11 @@ async function resubmitRequest(req, res) {
       isActive: true,
     }).populate("user")
     : null;
-  if (req.body.selected_budget_holder_id && (!budgetHolder || !budgetHolder.user?.isActive)) {
-    throw new HttpError(400, "Select an active budget holder with an active system account");
+  if (
+    req.body.selected_budget_holder_id &&
+    (!budgetHolder || !budgetHolder.user?.isActive || budgetHolder.user.role !== "approver_budget_holder")
+  ) {
+    throw new HttpError(400, "Select an active account with the Approver / Budget Holder role");
   }
   const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
     ? req.body.selected_approver_ids

@@ -50,14 +50,14 @@ async function importBudgetHoldersFromBuffer(buffer) {
   const users = await User.find({
     email: { $in: holders.map((holder) => holder.email) },
     isActive: true,
-    role: { $in: ["user", "admin", "approver_budget_holder"] },
+    role: "approver_budget_holder",
   }).select("_id email");
   const usersByEmail = new Map(users.map((user) => [user.email.toLowerCase(), user]));
   const missingAccounts = [...new Set(holders.filter((holder) => !usersByEmail.has(holder.email)).map((holder) => holder.email))];
   if (missingAccounts.length) {
     throw new HttpError(
       400,
-      `Create or activate approvable system accounts for these budget holders before importing: ${missingAccounts.join(", ")}`
+      `Assign the Approver / Budget Holder role to active system accounts before importing: ${missingAccounts.join(", ")}`
     );
   }
 
@@ -80,7 +80,7 @@ async function importBudgetHoldersFromBuffer(buffer) {
 async function listBudgetHolders() {
   const users = await User.find({
     isActive: true,
-    role: { $in: ["user", "admin", "approver_budget_holder"] },
+    role: "approver_budget_holder",
   }).select("_id name email").lean();
   if (users.length) {
     await BudgetHolder.bulkWrite(
@@ -102,7 +102,11 @@ async function listBudgetHolders() {
   }
 
   const holders = await BudgetHolder.find({ isActive: true })
-    .populate({ path: "user", match: { isActive: true }, select: "email" })
+    .populate({
+      path: "user",
+      match: { isActive: true, role: "approver_budget_holder" },
+      select: "email",
+    })
     .sort({ name: 1, email: 1 })
     .lean();
   const seenEmails = new Set();

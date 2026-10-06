@@ -164,6 +164,7 @@ beforeEach(async () => {
   const budgetHolderUser = await createUser({
     name: "Budget Holder",
     email: `budget-holder-${Math.random().toString(36).slice(2)}@example.com`,
+    role: "approver_budget_holder",
   });
   defaultBudgetHolderToken = await login(budgetHolderUser.email);
   const holder = await BudgetHolder.create({

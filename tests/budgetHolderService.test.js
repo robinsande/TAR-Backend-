@@ -52,7 +52,7 @@ describe("budget holder imports", () => {
     const user = await User.create({
       name: "Alex Holder",
       email: "alex@example.com",
-      role: "user",
+      role: "approver_budget_holder",
       isActive: true,
       mustSetPassword: false,
       passwordHash: await hashPassword("Password123!"),
@@ -72,11 +72,11 @@ describe("budget holder imports", () => {
     expect(holders[0]).not.toHaveProperty("fundCode");
   });
 
-  it("makes active system users available as budget holders without a spreadsheet import", async () => {
+  it("makes active accounts with the combined role available without a spreadsheet import", async () => {
     const user = await User.create({
-      name: "Existing Staff Member",
+      name: "Approver and Budget Holder",
       email: "staff@example.com",
-      role: "user",
+      role: "approver_budget_holder",
       isActive: true,
     });
 
@@ -90,11 +90,40 @@ describe("budget holder imports", () => {
     expect(directoryEntry).not.toBeNull();
   });
 
-  it("does not list inactive or privileged read-only accounts as budget holders", async () => {
-    await User.create([
-      { name: "Inactive Staff", email: "inactive@example.com", role: "user", isActive: false },
+  it("only lists combined approver and budget holder accounts", async () => {
+    const users = await User.create([
+      { name: "Line Manager", email: "manager@example.com", role: "admin", isActive: true },
+      { name: "Staff User", email: "staff-only@example.com", role: "user", isActive: true },
+      { name: "Inactive Combined Role", email: "inactive@example.com", role: "approver_budget_holder", isActive: false },
       { name: "Superadmin", email: "superadmin@example.com", role: "superadmin", isActive: true },
       { name: "Read Only", email: "readonly@example.com", role: "super_superadmin", isActive: true },
+    ]);
+    await BudgetHolder.create([
+      { name: "Line Manager", email: users[0].email, user: users[0]._id },
+      { name: "Staff User", email: users[1].email, user: users[1]._id },
+    ]);
+
+    expect(await listBudgetHolders()).toEqual([]);
+  });
+
+  it("rejects imports for users who do not have the combined role", async () => {
+    const user = await User.create({
+      name: "Line Manager",
+      email: "manager@example.com",
+      role: "admin",
+      isActive: true,
+    });
+    const buffer = workbookBuffer([
+      { Name: user.name, Email: user.email },
+    ]);
+
+    await expect(importBudgetHoldersFromBuffer(buffer))
+      .rejects.toThrow(/Approver.*Budget Holder role/);
+  });
+
+  it("does not list inactive combined role accounts", async () => {
+    await User.create([
+      { name: "Inactive Staff", email: "inactive@example.com", role: "approver_budget_holder", isActive: false },
     ]);
 
     expect(await listBudgetHolders()).toEqual([]);
