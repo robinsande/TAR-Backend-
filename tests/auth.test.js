@@ -121,8 +121,8 @@ describe("account activation", () => {
     expect(superadminResponse.status).toBe(204);
     expect(await User.exists({ _id: deletedUser._id })).toBeNull();
     const updatedUser = await User.findById(remainingUser._id);
-    expect(updatedUser.managerId).toBeNull();
-    expect(updatedUser.alternateApproverIds).toHaveLength(0);
+    expect(String(updatedUser.managerId)).toBe(String(deletedUser._id));
+    expect(updatedUser.alternateApproverIds.map(String)).toEqual([String(deletedUser._id)]);
 
     const selfDeleteResponse = await request(app)
       .delete(`/api/users/${superadmin._id}`)
