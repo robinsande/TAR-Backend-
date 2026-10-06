@@ -106,11 +106,6 @@ const approveBudgetHolderRequestValidator = [
     .trim()
     .isLength({ min: 2 })
     .withMessage("Budget holder signature is required"),
-  body("fundCode")
-    .isString()
-    .trim()
-    .notEmpty()
-    .withMessage("Confirm or correct the fund code before approving"),
 ];
 
 const rerouteApprovalValidator = [

@@ -78,11 +78,11 @@ function buildRequestPayload(selectedApproverId, overrides = {}) {
   };
 }
 
-async function approveBudgetHolderRequestFor(requestId, fundCode = "DEC16") {
+async function approveBudgetHolderRequestFor(requestId) {
   return request(app)
     .patch(`/api/requests/${requestId}/budget-holder/approve`)
     .set("Authorization", "Bearer " + defaultBudgetHolderToken)
-    .send({ signature: "Budget Holder Signature", fundCode });
+    .send({ signature: "Budget Holder Signature" });
 }
 
 beforeAll(async () => {
@@ -309,7 +309,7 @@ describe("request scoping and workflow", () => {
     })).toBe(1);
   });
 
-  it("lets the budget holder correct the fund code before routing the TAR to the line manager", async () => {
+  it("keeps the requester's fund code and does not require the budget holder to re-enter it", async () => {
     const manager = await createUser({
       name: "Manager Admin",
       email: "fund-correction-manager@example.com",
@@ -324,16 +324,16 @@ describe("request scoping and workflow", () => {
       .post("/api/requests")
       .set("Authorization", "Bearer " + requesterToken)
       .send(buildRequestPayload(manager._id, {
-        project: { ...buildRequestPayload(manager._id).project, fundCode: "WRONG-CODE" },
+        project: { ...buildRequestPayload(manager._id).project, fundCode: "DEC16" },
         passengers: [passengerFor(requester)],
       }));
     expect(createResponse.status).toBe(201);
 
-    const approval = await approveBudgetHolderRequestFor(createResponse.body._id, "DEC16");
+    const approval = await approveBudgetHolderRequestFor(createResponse.body._id);
     expect(approval.status).toBe(200);
     expect(approval.body.project.fundCode).toBe("DEC16");
-    expect(approval.body.budgetHolderDecision.comment).toMatch(/corrected from WRONG-CODE to DEC16/);
-    expect(approval.body.budgetHolderDecision.submittedFundCode).toBe("WRONG-CODE");
+    expect(approval.body.budgetHolderDecision.comment).toBe("Fund code reviewed");
+    expect(approval.body.budgetHolderDecision.submittedFundCode).toBe("DEC16");
     expect(approval.body.approvalStage).toBe("line_manager");
 
     const managerToken = await login(manager.email);
@@ -343,7 +343,7 @@ describe("request scoping and workflow", () => {
     expect(pending.body[0].project.fundCode).toBe("DEC16");
   });
 
-  it("sends separate sequential emails when one person is both budget holder and line manager", async () => {
+  it("automatically completes line-manager approval when the budget holder is also the selected manager", async () => {
     sendEmail.mockClear();
     const holder = await BudgetHolder.findById(defaultBudgetHolderId);
     await User.findByIdAndUpdate(holder.user, { role: "approver_budget_holder" });
@@ -370,20 +370,35 @@ describe("request scoping and workflow", () => {
     const budgetApproval = await request(app)
       .patch(`/api/requests/${createResponse.body._id}/budget-holder/approve`)
       .set("Authorization", "Bearer " + defaultBudgetHolderToken)
-      .send({ signature: "Budget Holder Signature", fundCode: "DEC16" });
+      .send({ signature: "Budget Holder Signature" });
     expect(budgetApproval.status).toBe(200);
+    expect(budgetApproval.body.status).toBe("approved");
     expect(budgetApproval.body.approvalStage).toBe("line_manager");
+    expect(budgetApproval.body.decision).toMatchObject({
+      decidedBy: expect.objectContaining({ _id: String(holder.user) }),
+      signature: "Budget Holder Signature",
+    });
+    expect(budgetApproval.body.budgetHolderDecision).toMatchObject({
+      status: "approved",
+      signature: "Budget Holder Signature",
+    });
+    expect(new Date(budgetApproval.body.decision.decidedAt).getTime())
+      .toBe(new Date(budgetApproval.body.budgetHolderDecision.decidedAt).getTime());
 
     const approvalEmails = sendEmail.mock.calls.filter(([recipient]) => recipient === holder.email);
     expect(approvalEmails.map(([, subject]) => subject)).toEqual([
       "TAR awaiting your fund-code review",
-      "New travel request awaiting approval",
     ]);
     const managerQueue = await request(app)
       .get("/api/requests/pending-my-approval")
       .set("Authorization", "Bearer " + managerToken);
     expect(managerQueue.status).toBe(200);
-    expect(managerQueue.body.map((item) => item._id)).toContain(createResponse.body._id);
+    expect(managerQueue.body.map((item) => item._id)).not.toContain(createResponse.body._id);
+    expect(await Notification.countDocuments({
+      recipient: requester._id,
+      type: "approved",
+      request: createResponse.body._id,
+    })).toBe(1);
   });
 
 

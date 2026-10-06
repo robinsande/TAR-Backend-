@@ -370,6 +370,8 @@ async function getPendingMyBudgetApproval(req, res) {
 async function decideBudgetHolderRequest(req, res, decisionStatus) {
   const requestDocument = await TravelRequest.findById(req.params.id)
     .populate("requestedBy", "-passwordHash")
+    .populate("selected_approver_id", "name email position")
+    .populate("selected_approver_ids", "name email position")
     .populate({ path: "selected_budget_holder_id", populate: { path: "user", select: "name email isActive" } });
 
   if (!requestDocument) {
@@ -395,18 +397,25 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
   };
 
   const requester = requestDocument.requestedBy;
-  const submittedFundCode = requestDocument.project.fundCode;
+  let automaticallyApprovedByLineManager = false;
   if (decisionStatus === "approved") {
-    const verifiedFundCode = String(req.body.fundCode || "").trim();
-    if (!verifiedFundCode) {
-      throw new HttpError(400, "Confirm or correct the fund code before approving");
-    }
-    requestDocument.project.fundCode = verifiedFundCode;
+    requestDocument.budgetHolderDecision.comment = "Fund code reviewed";
+    const approverIds = requestDocument.selected_approver_ids?.length
+      ? requestDocument.selected_approver_ids
+      : [requestDocument.selected_approver_id];
+    automaticallyApprovedByLineManager = approverIds.some(
+      (approver) => String(approver?._id || approver) === req.user.id
+    );
     requestDocument.approvalStage = "line_manager";
-    requestDocument.budgetHolderDecision.comment =
-      verifiedFundCode === submittedFundCode
-        ? "Fund code verified"
-        : `Fund code corrected from ${submittedFundCode} to ${verifiedFundCode}`;
+    if (automaticallyApprovedByLineManager) {
+      requestDocument.status = "approved";
+      requestDocument.decision = {
+        decidedBy: req.user.id,
+        decidedAt: requestDocument.budgetHolderDecision.decidedAt,
+        comment: "Budget holder and line-manager approval completed by the same person",
+        signature: req.body.signature,
+      };
+    }
   } else {
     requestDocument.status = "rejected";
   }
@@ -417,13 +426,28 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
     performedBy: req.user.id,
     targetRequest: requestDocument._id,
     metadata: {
-      verifiedFundCode: requestDocument.project.fundCode,
-      submittedFundCode,
+      fundCode: requestDocument.project.fundCode,
       comment: requestDocument.budgetHolderDecision.comment,
     },
   });
 
-  if (decisionStatus === "approved") {
+  if (automaticallyApprovedByLineManager) {
+    await createAuditLog({
+      action: "request_approved",
+      performedBy: req.user.id,
+      targetRequest: requestDocument._id,
+      metadata: {
+        comment: requestDocument.decision.comment,
+        signature: requestDocument.decision.signature,
+        automaticallyApprovedAfterBudgetHolderReview: true,
+      },
+    });
+    await notifyTravelRequestPassengers(requestDocument, "approved");
+    if (requester && !isPassengerOnRequest(requestDocument, requester)) {
+      await notifyTravelRequestUser(requester, "approved", requestDocument);
+    }
+    await notifyApprovedTarSuperAdmins(requestDocument);
+  } else if (decisionStatus === "approved") {
     const notifications = await notifyTravelRequestApprover(
       requestDocument,
       "new_request",
