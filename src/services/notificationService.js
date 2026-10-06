@@ -215,19 +215,18 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
 }
 
 async function notifyTravelRequestApprover(requestDocument, type, requester = null, extras = {}) {
-  const selectedIds = requestDocument.selected_approver_ids?.length
-    ? requestDocument.selected_approver_ids
-    : [requestDocument.selected_approver_id];
-  const approvers = await User.find({
-    _id: { $in: selectedIds.map((approver) => approver?._id || approver).filter(Boolean) },
+  const selectedApprover = requestDocument.selected_approver_id || requestDocument.selected_approver_ids?.[0];
+  if (!selectedApprover) {
+    return null;
+  }
+
+  const approver = await User.findOne({
+    _id: selectedApprover?._id || selectedApprover,
     role: "admin",
     isActive: true,
   }).select("-passwordHash");
 
-  const notifications = await Promise.all(
-    approvers.map((approver) => notifyTravelRequestUser(approver, type, requestDocument, "approver", requester, extras))
-  );
-  return notifications.length === 1 ? notifications[0] : notifications;
+  return notifyTravelRequestUser(approver, type, requestDocument, "approver", requester, extras);
 }
 
 async function notifyApprovedTarSuperAdmins(requestDocument) {

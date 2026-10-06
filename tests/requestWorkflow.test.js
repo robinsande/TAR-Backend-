@@ -370,7 +370,7 @@ describe("request scoping and workflow", () => {
     expect(downloadResponse.text).toBe("scope document");
   });
 
-  it("allows any selected per-request approver to approve the TAR", async () => {
+  it("emails only the primary selected approver while allowing any selected approver to approve", async () => {
     sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
@@ -415,10 +415,8 @@ describe("request scoping and workflow", () => {
     const approverEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "New travel request awaiting approval"
     );
-    expect(approverEmails).toHaveLength(2);
-    expect(approverEmails.map(([recipient]) => recipient)).toEqual(
-      expect.arrayContaining([manager.email, secondApprover.email])
-    );
+    expect(approverEmails).toHaveLength(1);
+    expect(approverEmails[0][0]).toBe(manager.email);
     const requesterApprovalEmails = sendEmail.mock.calls.filter(
       ([recipient, subject]) => recipient === requester.email && subject === "Travel request approved"
     );
@@ -465,11 +463,8 @@ describe("request scoping and workflow", () => {
     const reminderEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "Reminder: travel request awaiting your approval"
     );
-    expect(reminderEmails).toHaveLength(2);
+    expect(reminderEmails).toHaveLength(1);
     expect(reminderEmails[0][0]).toBe(manager.email);
-    expect(reminderEmails.map(([recipient]) => recipient)).toEqual(
-      expect.arrayContaining([manager.email, secondApprover.email])
-    );
   });
 
   it("shows existing requests to a recreated manager with the same email", async () => {
