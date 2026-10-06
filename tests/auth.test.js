@@ -78,6 +78,60 @@ describe("account activation", () => {
     expect(await User.exists({ email: payload.email, role: "user" })).toBeTruthy();
   });
 
+  it("permanently deletes users only when requested by a superadmin", async () => {
+    const admin = await User.create({
+      name: "Admin User",
+      email: "admin@example.com",
+      role: "admin",
+      isActive: true,
+    });
+    const superadmin = await User.create({
+      name: "Superadmin User",
+      email: "superadmin@example.com",
+      role: "superadmin",
+      isActive: true,
+    });
+    const deletedUser = await User.create({
+      name: "Deleted User",
+      email: "deleted@example.com",
+      role: "user",
+      isActive: true,
+    });
+    const remainingUser = await User.create({
+      name: "Remaining User",
+      email: "remaining@example.com",
+      role: "user",
+      isActive: true,
+      managerId: deletedUser._id,
+      alternateApproverIds: [deletedUser._id],
+    });
+    const deletionPath = `/api/users/${deletedUser._id}`;
+
+    const adminResponse = await request(app)
+      .delete(deletionPath)
+      .set("Authorization", `Bearer ${signToken({ userId: admin._id.toString(), role: admin.role })}`);
+
+    expect(adminResponse.status).toBe(403);
+    expect(await User.exists({ _id: deletedUser._id })).toBeTruthy();
+
+    const superadminResponse = await request(app)
+      .delete(deletionPath)
+      .set("Authorization", `Bearer ${signToken({ userId: superadmin._id.toString(), role: superadmin.role })}`);
+
+    expect(superadminResponse.status).toBe(204);
+    expect(await User.exists({ _id: deletedUser._id })).toBeNull();
+    const updatedUser = await User.findById(remainingUser._id);
+    expect(updatedUser.managerId).toBeNull();
+    expect(updatedUser.alternateApproverIds).toHaveLength(0);
+
+    const selfDeleteResponse = await request(app)
+      .delete(`/api/users/${superadmin._id}`)
+      .set("Authorization", `Bearer ${signToken({ userId: superadmin._id.toString(), role: superadmin.role })}`);
+
+    expect(selfDeleteResponse.status).toBe(400);
+    expect(await User.exists({ _id: superadmin._id })).toBeTruthy();
+  });
+
   it("activates a new account with a valid invite token", async () => {
     const token = generateInviteToken();
 

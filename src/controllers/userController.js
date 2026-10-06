@@ -167,13 +167,18 @@ async function deleteUser(req, res) {
   if (req.params.id === req.user.id) {
     throw new HttpError(400, "You cannot delete your own account");
   }
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
-    { $set: { isActive: false } },
-    { new: true }
-  ).select("-passwordHash -inviteToken -inviteTokenExpires");
+  const user = await User.findById(req.params.id);
   if (!user) throw new HttpError(404, "User not found");
-  return res.json(user);
+
+  await Promise.all([
+    User.updateMany({ managerId: user._id }, { $set: { managerId: null } }),
+    User.updateMany(
+      { alternateApproverIds: user._id },
+      { $pull: { alternateApproverIds: user._id } }
+    ),
+  ]);
+  await user.deleteOne();
+  return res.status(204).send();
 }
 
 async function updateUserProfile(req, res) {
