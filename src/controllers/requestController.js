@@ -52,11 +52,13 @@ async function createRequest(req, res) {
     throw new HttpError(404, "Requester not found");
   }
 
-  const budgetHolder = await BudgetHolder.findOne({
-    _id: req.body.selected_budget_holder_id,
-    isActive: true,
-  }).populate("user");
-  if (!budgetHolder || !budgetHolder.user?.isActive) {
+  const budgetHolder = req.body.selected_budget_holder_id
+    ? await BudgetHolder.findOne({
+      _id: req.body.selected_budget_holder_id,
+      isActive: true,
+    }).populate("user")
+    : null;
+  if (req.body.selected_budget_holder_id && (!budgetHolder || !budgetHolder.user?.isActive)) {
     throw new HttpError(400, "Select an active budget holder with an active system account");
   }
 
@@ -72,8 +74,8 @@ async function createRequest(req, res) {
 
   const requestDocument = await TravelRequest.create({
     requestedBy: requester._id,
-    selected_budget_holder_id: budgetHolder._id,
-    approvalStage: "budget_holder",
+    selected_budget_holder_id: budgetHolder?._id || null,
+    approvalStage: budgetHolder ? "budget_holder" : "line_manager",
     selected_approver_id: approvers[0]._id,
     selected_approver_ids: approvers.map((approver) => approver._id),
     project: req.body.project,
@@ -494,11 +496,13 @@ async function resubmitRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
-  const budgetHolder = await BudgetHolder.findOne({
-    _id: req.body.selected_budget_holder_id,
-    isActive: true,
-  }).populate("user");
-  if (!budgetHolder || !budgetHolder.user?.isActive) {
+  const budgetHolder = req.body.selected_budget_holder_id
+    ? await BudgetHolder.findOne({
+      _id: req.body.selected_budget_holder_id,
+      isActive: true,
+    }).populate("user")
+    : null;
+  if (req.body.selected_budget_holder_id && (!budgetHolder || !budgetHolder.user?.isActive)) {
     throw new HttpError(400, "Select an active budget holder with an active system account");
   }
   const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length

@@ -70,8 +70,8 @@ function applyRequestResubmission(requestDocument, payload, approvers, passenger
   requestDocument.passengers = passengers;
   requestDocument.selected_approver_id = approvers[0]._id;
   requestDocument.selected_approver_ids = approvers.map((approver) => approver._id);
-  requestDocument.selected_budget_holder_id = budgetHolder._id;
-  requestDocument.approvalStage = "budget_holder";
+  requestDocument.selected_budget_holder_id = budgetHolder?._id || null;
+  requestDocument.approvalStage = budgetHolder ? "budget_holder" : "line_manager";
   requestDocument.budgetHolderDecision = {
     status: null,
     decidedBy: null,
