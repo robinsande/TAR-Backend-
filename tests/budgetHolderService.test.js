@@ -71,4 +71,32 @@ describe("budget holder imports", () => {
     });
     expect(holders[0]).not.toHaveProperty("fundCode");
   });
+
+  it("makes active system users available as budget holders without a spreadsheet import", async () => {
+    const user = await User.create({
+      name: "Existing Staff Member",
+      email: "staff@example.com",
+      role: "user",
+      isActive: true,
+    });
+
+    const holders = await listBudgetHolders();
+
+    expect(holders).toContainEqual(expect.objectContaining({
+      name: user.name,
+      email: user.email,
+    }));
+    const directoryEntry = await BudgetHolder.findOne({ user: user._id });
+    expect(directoryEntry).not.toBeNull();
+  });
+
+  it("does not list inactive or privileged read-only accounts as budget holders", async () => {
+    await User.create([
+      { name: "Inactive Staff", email: "inactive@example.com", role: "user", isActive: false },
+      { name: "Superadmin", email: "superadmin@example.com", role: "superadmin", isActive: true },
+      { name: "Read Only", email: "readonly@example.com", role: "super_superadmin", isActive: true },
+    ]);
+
+    expect(await listBudgetHolders()).toEqual([]);
+  });
 });

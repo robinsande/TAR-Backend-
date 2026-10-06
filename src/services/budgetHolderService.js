@@ -78,6 +78,29 @@ async function importBudgetHoldersFromBuffer(buffer) {
 }
 
 async function listBudgetHolders() {
+  const users = await User.find({
+    isActive: true,
+    role: { $in: ["user", "admin", "approver_budget_holder"] },
+  }).select("_id name email").lean();
+  if (users.length) {
+    await BudgetHolder.bulkWrite(
+      users.map((user) => ({
+        updateOne: {
+          filter: { email: user.email },
+          update: {
+            $set: {
+              name: user.name,
+              email: user.email,
+              user: user._id,
+              isActive: true,
+            },
+          },
+          upsert: true,
+        },
+      }))
+    );
+  }
+
   const holders = await BudgetHolder.find({ isActive: true })
     .populate({ path: "user", match: { isActive: true }, select: "email" })
     .sort({ name: 1, email: 1 })
