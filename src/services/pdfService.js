@@ -515,24 +515,16 @@ function buildTravelRequestPdf(res, requestDocument) {
         { width: 0.19, value: budgetHolder.name || budgetHolder.email },
       ], height: 24 },
       { cells: [
-        { width: 0.20, value: "Budget Holder Review:", bold: true },
-        { width: 0.30, value: budgetHolderDecision.decidedBy?.name || budgetHolder.name },
         { width: 0.20, value: "Review Status:", bold: true },
-        { width: 0.30, value: budgetHolderDecision.status || "Pending" },
+        { width: 0.80, value: budgetHolderDecision.status || "Pending" },
       ], height: 24 },
       { cells: [
         { width: 0.20, value: "Budget Holder Email:", bold: true },
         { width: 0.80, value: budgetHolder.email },
       ], height: 24 },
       { cells: [
-        { width: 0.20, value: "Fund Code Reviewed:", bold: true },
-        { width: 0.80, value: budgetHolderDecision.comment },
-      ], height: 30 },
-      { cells: [
         { width: 0.20, value: "Budget Holder Signature:", bold: true },
-        { width: 0.45, value: budgetHolderDecision.signature ? "" : "____________________________", image: budgetHolderDecision.signature },
-        { width: 0.15, value: "Date:", bold: true },
-        { width: 0.20, value: formatDate(budgetHolderDecision.decidedAt) },
+        { width: 0.80, value: budgetHolderDecision.signature ? "" : "____________________________", image: budgetHolderDecision.signature },
       ], height: 40 },
       { cells: [
         { width: 0.15, value: "Project ID:", bold: true },
