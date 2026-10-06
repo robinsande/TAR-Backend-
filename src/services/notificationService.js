@@ -260,7 +260,7 @@ async function notifyTravelRequestApprover(requestDocument, type, requester = nu
 
   const approvers = await User.find({
     _id: { $in: approverIds },
-    role: "admin",
+    role: { $in: ["admin", "approver_budget_holder"] },
     isActive: true,
   }).select("-passwordHash");
   const approversById = new Map(approvers.map((approver) => [String(approver._id), approver]));

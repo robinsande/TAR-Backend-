@@ -106,8 +106,8 @@ async function listUsers(req, res) {
 async function createUser(req, res) {
   const { employeeNumber, name, email, position, office, department } = req.body;
   const role = req.body.role || "user";
-  if (!["user", "admin", "superadmin", "super_superadmin"].includes(role)) {
-    throw new HttpError(400, "Role must be user, admin, superadmin, or super_superadmin");
+  if (!["user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"].includes(role)) {
+    throw new HttpError(400, "Role must be user, admin, approver_budget_holder, superadmin, or super_superadmin");
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -191,7 +191,7 @@ async function updateUserProfile(req, res) {
         throw new HttpError(400, "A user cannot be their own line manager");
       }
       const manager = updates.managerId
-        ? await User.findOne({ _id: updates.managerId, role: "admin", isActive: true }).select("_id name email")
+        ? await User.findOne({ _id: updates.managerId, role: { $in: ["admin", "approver_budget_holder"] }, isActive: true }).select("_id name email")
         : null;
       if (updates.managerId && !manager) {
         throw new HttpError(400, "Line manager must be an active admin user");
@@ -205,12 +205,12 @@ async function updateUserProfile(req, res) {
       }
       const alternates = await User.find({
         _id: { $in: updates.alternateApproverIds },
-        role: "admin",
+        role: { $in: ["admin", "approver_budget_holder"] },
         isActive: true,
       }).select("_id");
       const uniqueIds = new Set(updates.alternateApproverIds.map((id) => String(id)));
       if (uniqueIds.size !== updates.alternateApproverIds.length || uniqueIds.has(String(req.params.id)) || alternates.length !== updates.alternateApproverIds.length) {
-        throw new HttpError(400, "Alternate approvers must be active admin users");
+        throw new HttpError(400, "Alternate approvers must have an active approver role");
       }
       updates.alternateApproverIds = alternates.map((user) => user._id);
     }
@@ -305,8 +305,8 @@ async function sendBulkInvitations(req, res) {
 async function updateUserRole(req, res) {
   const { role } = req.body;
 
-  if (!["user", "admin", "superadmin", "super_superadmin"].includes(role)) {
-    throw new HttpError(400, "Role must be user, admin, superadmin, or super_superadmin");
+  if (!["user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"].includes(role)) {
+    throw new HttpError(400, "Role must be user, admin, approver_budget_holder, superadmin, or super_superadmin");
   }
 
   if (req.params.id === req.user.id) {

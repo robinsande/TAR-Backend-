@@ -108,7 +108,7 @@ async function approveBudgetHolderRequest(requestId) {
   return request(app)
     .patch(`/api/requests/${requestId}/budget-holder/approve`)
     .set("Authorization", "Bearer " + defaultBudgetHolderToken)
-    .send({ signature: "Budget Holder Signature" });
+    .send({ signature: "Budget Holder Signature", fundCode: "DEC16" });
 }
 
 async function createApprovedTravelRequest(manager, traveller, booker = traveller) {

@@ -4,7 +4,7 @@ const budgetHolderSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, trim: true, lowercase: true },
-    fundCode: { type: String, required: true, trim: true },
+    fundCode: { type: String, trim: true, default: null },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

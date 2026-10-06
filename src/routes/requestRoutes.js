@@ -9,6 +9,7 @@ const {
   resubmitTravelRequestValidator,
   rejectTravelRequestValidator,
   approveTravelRequestValidator,
+  approveBudgetHolderRequestValidator,
   rerouteApprovalValidator,
 } = require("../validators/requestValidators");
 const {
@@ -37,27 +38,27 @@ router.use(authenticate);
 
 router.get(
   "/pending-my-approval",
-  requireRole("admin", "superadmin"),
+  requireRole("admin", "approver_budget_holder", "superadmin"),
   asyncHandler(getPendingMyApproval)
 );
 
 router.get(
   "/pending-my-budget-approval",
-  requireRole("user", "admin"),
+  requireRole("user", "admin", "approver_budget_holder"),
   asyncHandler(getPendingMyBudgetApproval)
 );
 
 router.patch(
   "/:id/budget-holder/approve",
-  requireRole("user", "admin"),
-  approveTravelRequestValidator,
+  requireRole("user", "admin", "approver_budget_holder"),
+  approveBudgetHolderRequestValidator,
   validationErrorHandler,
   asyncHandler(approveBudgetHolderRequest)
 );
 
 router.patch(
   "/:id/budget-holder/reject",
-  requireRole("user", "admin"),
+  requireRole("user", "admin", "approver_budget_holder"),
   rejectTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(rejectBudgetHolderRequest)
@@ -65,7 +66,7 @@ router.patch(
 
 router.post(
   "/",
-  requireRole("user", "admin", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin"),
   createTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(createRequest)
@@ -96,7 +97,7 @@ router.delete(
 
 router.post(
   "/:id/remind-approver",
-  requireRole("user", "admin", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin"),
   asyncHandler(remindApprover)
 );
 
@@ -122,7 +123,7 @@ router.patch(
 
 router.patch(
   "/:id/approve",
-  requireRole("admin"),
+  requireRole("admin", "approver_budget_holder"),
   approveTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(approveRequest)
@@ -130,7 +131,7 @@ router.patch(
 
 router.patch(
   "/:id/reject",
-  requireRole("admin"),
+  requireRole("admin", "approver_budget_holder"),
   rejectTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(rejectRequest)
@@ -138,7 +139,7 @@ router.patch(
 
 router.patch(
   "/:id",
-  requireRole("user", "admin", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin"),
   resubmitTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(resubmitRequest)

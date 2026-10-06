@@ -94,6 +94,7 @@ const budgetHolderDecisionSchema = new mongoose.Schema(
     decidedAt: { type: Date, default: null },
     comment: { type: String, trim: true, default: null },
     signature: { type: String, trim: true, default: null },
+    submittedFundCode: { type: String, trim: true, default: null },
   },
   { _id: false }
 );

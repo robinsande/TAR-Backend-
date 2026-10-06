@@ -78,11 +78,11 @@ function buildRequestPayload(selectedApproverId, overrides = {}) {
   };
 }
 
-async function approveBudgetHolderRequestFor(requestId) {
+async function approveBudgetHolderRequestFor(requestId, fundCode = "DEC16") {
   return request(app)
     .patch(`/api/requests/${requestId}/budget-holder/approve`)
     .set("Authorization", "Bearer " + defaultBudgetHolderToken)
-    .send({ signature: "Budget Holder Signature" });
+    .send({ signature: "Budget Holder Signature", fundCode });
 }
 
 beforeAll(async () => {
@@ -152,6 +152,31 @@ describe("authentication and authorization", () => {
 });
 
 describe("user profile updates", () => {
+  it("lets superadmins assign the combined approver and budget-holder role", async () => {
+    const superadmin = await createUser({
+      name: "Super Admin",
+      email: "role-superadmin@example.com",
+      role: "superadmin",
+    });
+    const account = await createUser({
+      name: "Dual Role Reviewer",
+      email: "dual-role-reviewer@example.com",
+    });
+    const token = await login(superadmin.email);
+
+    const update = await request(app)
+      .patch(`/api/users/${account._id}/role`)
+      .set("Authorization", "Bearer " + token)
+      .send({ role: "approver_budget_holder" });
+    const approvers = await request(app)
+      .get("/api/users/approvers")
+      .set("Authorization", "Bearer " + token);
+
+    expect(update.status).toBe(200);
+    expect(update.body.role).toBe("approver_budget_holder");
+    expect(approvers.body.map((user) => user._id)).toContain(account._id.toString());
+  });
+
   it("preserves a designated manager stored by name and email when managerId is omitted", async () => {
     const superadmin = await createUser({
       name: "Super Admin",
@@ -228,6 +253,7 @@ describe("request scoping and workflow", () => {
     const holderApproval = await approveBudgetHolderRequestFor(createResponse.body._id);
     expect(holderApproval.status).toBe(200);
     expect(holderApproval.body.approvalStage).toBe("line_manager");
+    expect(holderApproval.body.project.fundCode).toBe("DEC16");
     const pendingAfterVerification = await request(app)
       .get("/api/requests/pending-my-approval")
       .set("Authorization", "Bearer " + managerToken);
@@ -262,6 +288,12 @@ describe("request scoping and workflow", () => {
       .send({ comment: "Not the selected holder" });
     expect(unauthorized.status).toBe(403);
 
+    const missingReason = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/reject`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send({ comment: "   " });
+    expect(missingReason.status).toBe(400);
+
     const rejection = await request(app)
       .patch(`/api/requests/${createResponse.body._id}/budget-holder/reject`)
       .set("Authorization", "Bearer " + defaultBudgetHolderToken)
@@ -269,12 +301,91 @@ describe("request scoping and workflow", () => {
     expect(rejection.status).toBe(200, JSON.stringify(rejection.body));
     expect(rejection.body.status).toBe("rejected");
     expect(rejection.body.budgetHolderDecision.status).toBe("rejected");
+    expect(rejection.body.budgetHolderDecision.comment).toBe("Please correct the fund code.");
     expect(await Notification.countDocuments({
       recipient: requester._id,
       type: "rejected",
       request: createResponse.body._id,
     })).toBe(1);
   });
+
+  it("lets the budget holder correct the fund code before routing the TAR to the line manager", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "fund-correction-manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "fund-correction-requester@example.com",
+    });
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(manager._id, {
+        project: { ...buildRequestPayload(manager._id).project, fundCode: "WRONG-CODE" },
+        passengers: [passengerFor(requester)],
+      }));
+    expect(createResponse.status).toBe(201);
+
+    const approval = await approveBudgetHolderRequestFor(createResponse.body._id, "DEC16");
+    expect(approval.status).toBe(200);
+    expect(approval.body.project.fundCode).toBe("DEC16");
+    expect(approval.body.budgetHolderDecision.comment).toMatch(/corrected from WRONG-CODE to DEC16/);
+    expect(approval.body.budgetHolderDecision.submittedFundCode).toBe("WRONG-CODE");
+    expect(approval.body.approvalStage).toBe("line_manager");
+
+    const managerToken = await login(manager.email);
+    const pending = await request(app)
+      .get("/api/requests/pending-my-approval")
+      .set("Authorization", "Bearer " + managerToken);
+    expect(pending.body[0].project.fundCode).toBe("DEC16");
+  });
+
+  it("sends separate sequential emails when one person is both budget holder and line manager", async () => {
+    sendEmail.mockClear();
+    const holder = await BudgetHolder.findById(defaultBudgetHolderId);
+    await User.findByIdAndUpdate(holder.user, { role: "approver_budget_holder" });
+    const managerToken = await login(holder.email);
+    const requester = await createUser({
+      name: "Requester One",
+      email: "dual-role-requester@example.com",
+    });
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(holder.user, {
+        selected_approver_ids: [String(holder.user)],
+        passengers: [passengerFor(requester)],
+      }));
+
+    expect(createResponse.status).toBe(201);
+    const initialEmails = sendEmail.mock.calls.filter(([recipient]) => recipient === holder.email);
+    expect(initialEmails.map(([, subject]) => subject)).toEqual([
+      "TAR awaiting your fund-code review",
+    ]);
+
+    const budgetApproval = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/approve`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send({ signature: "Budget Holder Signature", fundCode: "DEC16" });
+    expect(budgetApproval.status).toBe(200);
+    expect(budgetApproval.body.approvalStage).toBe("line_manager");
+
+    const approvalEmails = sendEmail.mock.calls.filter(([recipient]) => recipient === holder.email);
+    expect(approvalEmails.map(([, subject]) => subject)).toEqual([
+      "TAR awaiting your fund-code review",
+      "New travel request awaiting approval",
+    ]);
+    const managerQueue = await request(app)
+      .get("/api/requests/pending-my-approval")
+      .set("Authorization", "Bearer " + managerToken);
+    expect(managerQueue.status).toBe(200);
+    expect(managerQueue.body.map((item) => item._id)).toContain(createResponse.body._id);
+  });
+
 
   it("sends requests directly to the line manager when no budget holder is selected", async () => {
     const manager = await createUser({

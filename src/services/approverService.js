@@ -2,7 +2,7 @@ const User = require("../models/User");
 const HttpError = require("../utils/httpError");
 
 async function listEligibleApprovers(userId) {
-  return User.find({ role: "admin", isActive: true })
+  return User.find({ role: { $in: ["admin", "approver_budget_holder"] }, isActive: true })
     .select("-passwordHash")
     .sort({ name: 1 });
 }
@@ -19,7 +19,7 @@ async function resolveManagerApproverForUser(userId) {
       return null;
     }
 
-    if (manager.role === "admin") {
+    if (["admin", "approver_budget_holder"].includes(manager.role)) {
       return manager;
     }
 
@@ -40,8 +40,8 @@ async function getEligibleApproverById(approverId, { excludeUserIds = [] } = {})
     throw new HttpError(400, "Selected approver was not found or is inactive");
   }
 
-  if (approver.role !== "admin") {
-    throw new HttpError(400, "Selected approver must be an active admin");
+  if (!["admin", "approver_budget_holder"].includes(approver.role)) {
+    throw new HttpError(400, "Selected approver must have an active approver role");
   }
 
   const excluded = new Set(excludeUserIds.map((id) => String(id)).filter(Boolean));

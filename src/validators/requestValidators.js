@@ -82,7 +82,7 @@ const createTravelRequestValidator = travelRequestBaseValidators;
 const resubmitTravelRequestValidator = travelRequestBaseValidators;
 
 const rejectTravelRequestValidator = [
-  body("comment").isString().notEmpty().withMessage("Rejection comment is required"),
+  body("comment").isString().trim().notEmpty().withMessage("Rejection comment is required"),
 ];
 
 const approveTravelRequestValidator = [
@@ -100,6 +100,19 @@ const approveTravelRequestValidator = [
   body("decisionDate").optional().isISO8601().withMessage("Approval date must be a valid date"),
 ];
 
+const approveBudgetHolderRequestValidator = [
+  body("signature")
+    .isString()
+    .trim()
+    .isLength({ min: 2 })
+    .withMessage("Budget holder signature is required"),
+  body("fundCode")
+    .isString()
+    .trim()
+    .notEmpty()
+    .withMessage("Confirm or correct the fund code before approving"),
+];
+
 const rerouteApprovalValidator = [
   body("newApproverId").isMongoId().withMessage("A valid new approver ID is required"),
   body("comment").optional().isString().withMessage("Comment must be a string"),
@@ -110,5 +123,6 @@ module.exports = {
   resubmitTravelRequestValidator,
   rejectTravelRequestValidator,
   approveTravelRequestValidator,
+  approveBudgetHolderRequestValidator,
   rerouteApprovalValidator,
 };

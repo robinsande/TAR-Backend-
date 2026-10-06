@@ -391,11 +391,22 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
     decidedAt: new Date(),
     comment: req.body?.comment || null,
     signature: decisionStatus === "approved" ? req.body.signature : null,
+    submittedFundCode: requestDocument.project.fundCode,
   };
 
   const requester = requestDocument.requestedBy;
+  const submittedFundCode = requestDocument.project.fundCode;
   if (decisionStatus === "approved") {
+    const verifiedFundCode = String(req.body.fundCode || "").trim();
+    if (!verifiedFundCode) {
+      throw new HttpError(400, "Confirm or correct the fund code before approving");
+    }
+    requestDocument.project.fundCode = verifiedFundCode;
     requestDocument.approvalStage = "line_manager";
+    requestDocument.budgetHolderDecision.comment =
+      verifiedFundCode === submittedFundCode
+        ? "Fund code verified"
+        : `Fund code corrected from ${submittedFundCode} to ${verifiedFundCode}`;
   } else {
     requestDocument.status = "rejected";
   }
@@ -406,8 +417,8 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
     performedBy: req.user.id,
     targetRequest: requestDocument._id,
     metadata: {
-      fundCode: requestDocument.project.fundCode,
-      budgetHolderFundCode: requestDocument.selected_budget_holder_id.fundCode,
+      verifiedFundCode: requestDocument.project.fundCode,
+      submittedFundCode,
       comment: requestDocument.budgetHolderDecision.comment,
     },
   });
@@ -553,7 +564,7 @@ async function getPendingMyApproval(req, res) {
   const query =
     req.user.role === "superadmin"
       ? { status: "pending" }
-      : req.user.role !== "admin"
+      : !["admin", "approver_budget_holder"].includes(req.user.role)
         ? { _id: null }
       : {
           $or: [{ selected_approver_id: req.user.id }, { selected_approver_ids: req.user.id }],

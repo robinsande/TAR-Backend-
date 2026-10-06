@@ -16,7 +16,7 @@ async function listEligiblePassengers(requesterId) {
   return User.find({
     isActive: true,
     $or: [
-      { role: { $in: ["user", "admin"] } },
+      { role: { $in: ["user", "admin", "approver_budget_holder"] } },
       { _id: requesterId, role: "superadmin" },
     ],
   })
@@ -50,7 +50,7 @@ async function resolvePassengers(rawPassengers = []) {
   const users = await User.find({
     _id: { $in: orderedIds },
     isActive: true,
-    role: { $in: ["user", "admin", "superadmin"] },
+    role: { $in: ["user", "admin", "approver_budget_holder", "superadmin"] },
   }).select(PASSENGER_SELECT);
 
   const byId = new Map(users.map((user) => [user._id.toString(), user]));

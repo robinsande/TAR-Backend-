@@ -17,18 +17,16 @@ function parseBudgetHolderRows(rows) {
   rows.forEach((row, index) => {
     const name = getCellValue(row, ["Budget Holder Name", "Name"]);
     const email = getCellValue(row, ["Budget Holder Email", "Email Address", "Email"]).toLowerCase();
-    const fundCode = getCellValue(row, ["Fund Code ID", "Fund Code", "FundCode"]);
-    if (!name && !email && !fundCode) return;
+    if (!name && !email) return;
 
-    if (!name || !email || !fundCode || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.push(`Row ${index + 2}: provide a valid name, email, and fund code.`);
+    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push(`Row ${index + 2}: provide a valid name and email.`);
       return;
     }
 
-    const key = `${email}\u0000${fundCode.toLowerCase()}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    holders.push({ name, email, fundCode });
+    if (seen.has(email)) return;
+    seen.add(email);
+    holders.push({ name, email });
   });
 
   if (!holders.length && !errors.length) {
@@ -52,7 +50,7 @@ async function importBudgetHoldersFromBuffer(buffer) {
   const users = await User.find({
     email: { $in: holders.map((holder) => holder.email) },
     isActive: true,
-    role: { $in: ["user", "admin"] },
+    role: { $in: ["user", "admin", "approver_budget_holder"] },
   }).select("_id email");
   const usersByEmail = new Map(users.map((user) => [user.email.toLowerCase(), user]));
   const missingAccounts = [...new Set(holders.filter((holder) => !usersByEmail.has(holder.email)).map((holder) => holder.email))];
@@ -68,7 +66,7 @@ async function importBudgetHoldersFromBuffer(buffer) {
   for (const holder of holders) {
     const user = usersByEmail.get(holder.email);
     const result = await BudgetHolder.updateOne(
-      { email: holder.email, fundCode: holder.fundCode },
+      { email: holder.email },
       { $set: { ...holder, user: user._id, isActive: true } },
       { upsert: true, runValidators: true }
     );
@@ -80,13 +78,19 @@ async function importBudgetHoldersFromBuffer(buffer) {
 }
 
 async function listBudgetHolders() {
-  return BudgetHolder.find({ isActive: true })
+  const holders = await BudgetHolder.find({ isActive: true })
     .populate({ path: "user", match: { isActive: true }, select: "email" })
-    .sort({ name: 1, fundCode: 1 })
-    .lean()
-    .then((holders) => holders
-      .filter((holder) => holder.user)
-      .map(({ _id, name, email, fundCode }) => ({ _id, name, email, fundCode })));
+    .sort({ name: 1, email: 1 })
+    .lean();
+  const seenEmails = new Set();
+  return holders
+    .filter((holder) => {
+      const email = holder.email.toLowerCase();
+      if (!holder.user || seenEmails.has(email)) return false;
+      seenEmails.add(email);
+      return true;
+    })
+    .map(({ _id, name, email }) => ({ _id, name, email }));
 }
 
 module.exports = {

@@ -30,22 +30,25 @@ function workbookBuffer(rows) {
 }
 
 describe("budget holder imports", () => {
-  it("parses supported spreadsheet columns and skips duplicate rows", () => {
+  it("parses name and email columns, ignores fund-code columns, and skips duplicate emails", () => {
     expect(parseBudgetHolderRows([
       { "Budget Holder Name": "Alex Holder", "Budget Holder Email": "ALEX@example.com", "Fund Code ID": "DEC16" },
-      { Name: "Alex Holder", Email: "alex@example.com", "Fund Code": "DEC16" },
+      { Name: "Alex Holder", Email: "alex@example.com", "Fund Code": "OTHER" },
     ])).toEqual([
-      { name: "Alex Holder", email: "alex@example.com", fundCode: "DEC16" },
+      { name: "Alex Holder", email: "alex@example.com" },
     ]);
   });
 
-  it("reports invalid rows instead of partially importing them", () => {
+  it("requires a valid name and email but does not require a fund code", () => {
+    expect(parseBudgetHolderRows([
+      { Name: "Valid Holder", Email: "holder@example.com" },
+    ])).toEqual([{ name: "Valid Holder", email: "holder@example.com" }]);
     expect(() => parseBudgetHolderRows([
-      { Name: "Missing Code", Email: "holder@example.com" },
-    ])).toThrow(/valid name, email, and fund code/i);
+      { Name: "Missing Email" },
+    ])).toThrow(/valid name and email/i);
   });
 
-  it("imports active account mappings and lists registered fund codes", async () => {
+  it("imports active account mappings and lists holders without fund codes", async () => {
     const user = await User.create({
       name: "Alex Holder",
       email: "alex@example.com",
@@ -55,7 +58,7 @@ describe("budget holder imports", () => {
       passwordHash: await hashPassword("Password123!"),
     });
     const buffer = workbookBuffer([
-      { "Budget Holder Name": "Alex Holder", "Budget Holder Email": user.email, "Fund Code ID": "DEC16" },
+      { "Budget Holder Name": "Alex Holder", "Budget Holder Email": user.email },
     ]);
 
     const result = await importBudgetHoldersFromBuffer(buffer);
@@ -65,7 +68,7 @@ describe("budget holder imports", () => {
     expect(holders[0]).toMatchObject({
       name: "Alex Holder",
       email: user.email,
-      fundCode: "DEC16",
     });
+    expect(holders[0]).not.toHaveProperty("fundCode");
   });
 });

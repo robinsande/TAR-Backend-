@@ -58,7 +58,7 @@ async function buildRequestScope(user, listScope) {
     return {};
   }
 
-  if (user.role === "admin") {
+  if (["admin", "approver_budget_holder"].includes(user.role)) {
     const directReportIds = await getDirectReportIds(user.id, user.email);
 
     return {
@@ -101,7 +101,7 @@ async function canAccessRequest(user, request) {
     return true;
   }
 
-  if (user.role === "admin") {
+  if (["admin", "approver_budget_holder"].includes(user.role)) {
     if (approverIds.includes(user.id)) {
       return true;
     }
@@ -131,7 +131,7 @@ function ensureApprover(user, request) {
   const approverIds = getRequestApproverIds(request);
   const requesterId = idToString(request.requestedBy);
 
-  if (user.role !== "admin" || !approverIds.includes(user.id)) {
+  if (!["admin", "approver_budget_holder"].includes(user.role) || !approverIds.includes(user.id)) {
     throw new HttpError(403, "Only the assigned approver can perform this action");
   }
 
