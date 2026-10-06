@@ -12,6 +12,7 @@ const TravelRequest = require("../src/models/TravelRequest");
 const Notification = require("../src/models/Notification");
 const { sendEmail } = require("../src/services/emailService");
 const { hashPassword } = require("../src/services/passwordService");
+const { runPendingApprovalReminders } = require("../src/services/pendingReminderScheduler");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
 let app;
@@ -370,7 +371,7 @@ describe("request scoping and workflow", () => {
     expect(downloadResponse.text).toBe("scope document");
   });
 
-  it("emails only the primary selected approver while allowing any selected approver to approve", async () => {
+  it("emails all selected approvers while allowing any selected approver to approve", async () => {
     sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
@@ -415,8 +416,10 @@ describe("request scoping and workflow", () => {
     const approverEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "New travel request awaiting approval"
     );
-    expect(approverEmails).toHaveLength(1);
-    expect(approverEmails[0][0]).toBe(manager.email);
+    expect(approverEmails).toHaveLength(2);
+    expect(approverEmails.map(([recipient]) => recipient)).toEqual(
+      expect.arrayContaining([manager.email, secondApprover.email])
+    );
     const requesterApprovalEmails = sendEmail.mock.calls.filter(
       ([recipient, subject]) => recipient === requester.email && subject === "Travel request approved"
     );
@@ -463,8 +466,67 @@ describe("request scoping and workflow", () => {
     const reminderEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "Reminder: travel request awaiting your approval"
     );
-    expect(reminderEmails).toHaveLength(1);
+    expect(reminderEmails).toHaveLength(2);
     expect(reminderEmails[0][0]).toBe(manager.email);
+    expect(reminderEmails.map(([recipient]) => recipient)).toEqual(
+      expect.arrayContaining([manager.email, secondApprover.email])
+    );
+  });
+
+  it("sends scheduled reminders to every selected approver and retries failed sends", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager-scheduled@example.com",
+      role: "admin",
+    });
+    const secondApprover = await createUser({
+      name: "Second Approver",
+      email: "second-scheduled@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "requester-scheduled@example.com",
+    });
+    const submittedAt = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const firstRequest = await TravelRequest.create({
+      requestedBy: requester._id,
+      selected_approver_id: manager._id,
+      selected_approver_ids: [manager._id, secondApprover._id],
+      submittedAt,
+      ...buildRequestPayload(manager._id),
+    });
+    const secondRequest = await TravelRequest.create({
+      requestedBy: requester._id,
+      selected_approver_id: secondApprover._id,
+      submittedAt,
+      ...buildRequestPayload(secondApprover._id),
+    });
+
+    sendEmail.mockClear();
+    sendEmail.mockResolvedValue(false);
+    const failedRun = await runPendingApprovalReminders({ force: true });
+
+    expect(failedRun.candidateRequests).toBe(2);
+    expect(failedRun.approverEmailsSent).toBe(0);
+    expect(await TravelRequest.findById(firstRequest._id).then((item) => item.lastApprovalReminderAt)).toBeNull();
+    expect(await TravelRequest.findById(secondRequest._id).then((item) => item.lastApprovalReminderAt)).toBeNull();
+
+    sendEmail.mockResolvedValue(true);
+    sendEmail.mockClear();
+    const successfulRun = await runPendingApprovalReminders({ force: true });
+    const reminderEmails = sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "Reminder: travel request awaiting your approval"
+    );
+
+    expect(successfulRun.candidateRequests).toBe(2);
+    expect(successfulRun.approverEmailsSent).toBe(3);
+    expect(reminderEmails.map(([recipient]) => recipient).sort()).toEqual(
+      [manager.email, secondApprover.email, secondApprover.email].sort()
+    );
+    expect((await TravelRequest.findById(firstRequest._id)).lastApprovalReminderAt).toBeInstanceOf(Date);
+    expect((await TravelRequest.findById(secondRequest._id)).lastApprovalReminderAt).toBeInstanceOf(Date);
   });
 
   it("shows existing requests to a recreated manager with the same email", async () => {

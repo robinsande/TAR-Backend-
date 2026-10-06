@@ -13,6 +13,10 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - Spreadsheet import via CLI or superadmin upload endpoint.
 - Request filtering, list scopes (`mine` / `team` / `all`), and pagination.
 
+## Pending approval reminders
+
+Pending TARs receive automatic reminders to their primary selected approver after 22 hours, then approximately every 24 hours while they remain pending. The scheduler checks every 4 hours during configured working hours in production. Set `PENDING_REMINDER_INTERVAL_HOURS`, `PENDING_REMINDER_MIN_AGE_HOURS`, `PENDING_REMINDER_COOLDOWN_HOURS`, `PENDING_REMINDER_WORK_START_HOUR`, and `PENDING_REMINDER_WORK_END_HOUR` to override the defaults. Failed email sends do not advance the reminder timestamp, so the scheduler can retry.
+
 ## Tech Stack
 - Node.js
 - Express

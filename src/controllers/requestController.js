@@ -85,8 +85,14 @@ async function createRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
-  await notifyTravelRequestApprover(requestDocument, "new_request", requester);
-  requestDocument.lastApprovalReminderAt = new Date();
+  const approverNotification = await notifyTravelRequestApprover(
+    requestDocument,
+    "new_request",
+    requester
+  );
+  if (approverNotification.some(Boolean)) {
+    requestDocument.lastApprovalReminderAt = new Date();
+  }
   if (!isPassengerOnRequest(requestDocument, requester)) {
     await notifyTravelRequestUser(requester, "new_request", requestDocument, "requester");
   }
@@ -141,8 +147,13 @@ async function remindApprover(req, res) {
     throw new HttpError(503, "Reminder notification was recorded, but the email could not be sent. Check the Brevo sender configuration.");
   }
 
+  if (notifications.some(Boolean)) {
+    requestDocument.lastApprovalReminderAt = new Date();
+    await requestDocument.save();
+  }
+
   return res.json({
-    message: `Reminder sent to ${sentCount} assigned approver${sentCount === 1 ? "" : "s"}`,
+    message: `Reminder sent to ${sentCount} selected approver${sentCount === 1 ? "" : "s"}`,
     sentCount,
   });
 }
@@ -161,8 +172,12 @@ async function remindAllPendingApprovers(req, res) {
         "approval_reminder",
         requestDocument.requestedBy
       );
-    } catch {
+    } catch (error) {
       results.failed += 1;
+      console.error(
+        `[pending-reminders] Failed to send manual reminder for TAR ${requestDocument._id}:`,
+        error.message
+      );
       continue;
     }
     const sent = Array.isArray(notifications) ? notifications.filter(Boolean).length : Number(Boolean(notifications));
@@ -171,8 +186,10 @@ async function remindAllPendingApprovers(req, res) {
     } else {
       requestDocument.lastApprovalReminderAt = new Date();
       await requestDocument.save();
-      if (sent === (requestDocument.selected_approver_ids?.length || 1)) results.sent += sent;
-      else results.failed += sent;
+      results.sent += sent;
+      if (!notifications.every(Boolean)) {
+        results.failed += 1;
+      }
     }
   }
 
@@ -398,7 +415,7 @@ async function resubmitRequest(req, res) {
   });
 
   applyRequestResubmission(requestDocument, req.body, approvers, passengers);
-  requestDocument.lastApprovalReminderAt = new Date();
+  requestDocument.lastApprovalReminderAt = null;
 
   await requestDocument.save();
 
@@ -410,7 +427,15 @@ async function resubmitRequest(req, res) {
   });
 
   await notifyTravelRequestPassengers(requestDocument, "resubmitted");
-  await notifyTravelRequestApprover(requestDocument, "resubmitted", requestDocument.requestedBy);
+  const approverNotification = await notifyTravelRequestApprover(
+    requestDocument,
+    "resubmitted",
+    requestDocument.requestedBy
+  );
+  if (approverNotification.some(Boolean)) {
+    requestDocument.lastApprovalReminderAt = new Date();
+    await requestDocument.save();
+  }
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
 
@@ -533,7 +558,7 @@ async function rerouteApproval(req, res) {
   requestDocument.selected_approver_ids = [newApprover._id];
   resetRequestDecision(requestDocument);
   requestDocument.submittedAt = new Date();
-  requestDocument.lastApprovalReminderAt = new Date();
+  requestDocument.lastApprovalReminderAt = null;
   requestDocument.version += 1;
 
   await requestDocument.save();
@@ -551,7 +576,7 @@ async function rerouteApproval(req, res) {
 
   const reroutedRequest = await populateTravelRequestById(requestDocument._id);
 
-  await notifyTravelRequestApprover(
+  const approverNotification = await notifyTravelRequestApprover(
     reroutedRequest,
     "rerouted",
     reroutedRequest.requestedBy,
@@ -562,6 +587,10 @@ async function rerouteApproval(req, res) {
       newApprover,
     }
   );
+  if (approverNotification.some(Boolean)) {
+    reroutedRequest.lastApprovalReminderAt = new Date();
+    await reroutedRequest.save();
+  }
 
   const populated = await buildTravelRequestResponse(requestDocument._id);
   return res.json(populated);

@@ -104,8 +104,8 @@ async function runPendingApprovalReminders({ force = false } = {}) {
         if (sentCount > 0) {
           requestDocument.lastApprovalReminderAt = new Date();
           await requestDocument.save();
-          summary.approverEmailsSent += sentCount;
         }
+        summary.approverEmailsSent += sentCount;
 
         summary.processedRequests += 1;
       } catch (requestError) {

@@ -3,6 +3,9 @@ const env = require("../config/env");
 
 let transporter = null;
 
+const BREVO_API_TIMEOUT_MS = 10_000;
+const BREVO_API_RETRY_DELAYS_MS = [500, 1500];
+
 function isEmailConfigured() {
   return Boolean(
     env.emailFrom && (
@@ -12,30 +15,63 @@ function isEmailConfigured() {
   );
 }
 
+function isRetryableBrevoError(error) {
+  return (
+    error?.name === "AbortError" ||
+    [0, 408, 425, 429, 500, 502, 503, 504].includes(error?.status)
+  );
+}
+
 async function sendBrevoApiEmail(to, subject, html, text, replyTo = null, from = null) {
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "api-key": env.brevoApiKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: { email: from || env.emailFrom },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-      textContent: text,
-      ...(replyTo ? { replyTo: { email: replyTo } } : {}),
-    }),
+  const body = JSON.stringify({
+    sender: { email: from || env.emailFrom },
+    to: [{ email: to }],
+    subject,
+    htmlContent: html,
+    textContent: text,
+    ...(replyTo ? { replyTo: { email: replyTo } } : {}),
   });
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`Brevo API ${response.status}: ${message}`);
+  for (let attempt = 0; attempt <= BREVO_API_RETRY_DELAYS_MS.length; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), BREVO_API_TIMEOUT_MS);
+
+    try {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "api-key": env.brevoApiKey,
+          "content-type": "application/json",
+        },
+        body,
+        signal: controller.signal,
+      });
+
+      if (response.ok) {
+        return true;
+      }
+
+      const message = await response.text();
+      const error = new Error(`Brevo API ${response.status}: ${message}`);
+      error.status = response.status;
+      if (!isRetryableBrevoError(error) || attempt === BREVO_API_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+      console.warn(`Brevo API returned ${response.status}; retrying email delivery`);
+    } catch (error) {
+      if (!isRetryableBrevoError(error) || attempt === BREVO_API_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+      console.warn(`Brevo API request failed; retrying email delivery: ${error.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, BREVO_API_RETRY_DELAYS_MS[attempt]));
   }
 
-  return true;
+  return false;
 }
 
 function getTransporter() {
@@ -91,7 +127,7 @@ async function sendEmail(to, subject, html, options = {}) {
     return true;
   } catch (error) {
     console.error("Email failed:", error.message);
-      console.error(`Email failed for ${to || "unknown recipient"}:`, error.message);
+    console.error(`Email failed for ${to || "unknown recipient"}:`, error.message);
     return false;
   }
 }

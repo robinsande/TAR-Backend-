@@ -215,18 +215,27 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
 }
 
 async function notifyTravelRequestApprover(requestDocument, type, requester = null, extras = {}) {
-  const selectedApprover = requestDocument.selected_approver_id || requestDocument.selected_approver_ids?.[0];
-  if (!selectedApprover) {
-    return null;
+  const selectedApproverIds = requestDocument.selected_approver_ids?.length
+    ? requestDocument.selected_approver_ids
+    : [requestDocument.selected_approver_id];
+  const approverIds = [...new Set(selectedApproverIds.map((approver) => String(approver?._id || approver)).filter(Boolean))];
+  if (!approverIds.length) {
+    return [];
   }
 
-  const approver = await User.findOne({
-    _id: selectedApprover?._id || selectedApprover,
+  const approvers = await User.find({
+    _id: { $in: approverIds },
     role: "admin",
     isActive: true,
   }).select("-passwordHash");
+  const approversById = new Map(approvers.map((approver) => [String(approver._id), approver]));
 
-  return notifyTravelRequestUser(approver, type, requestDocument, "approver", requester, extras);
+  return Promise.all(approverIds.map((approverId) => {
+    const approver = approversById.get(approverId);
+    return approver
+      ? notifyTravelRequestUser(approver, type, requestDocument, "approver", requester, extras)
+      : null;
+  }));
 }
 
 async function notifyApprovedTarSuperAdmins(requestDocument) {
@@ -258,7 +267,9 @@ async function resendTravelRequestNotifications(requestDocument) {
   const approvedTarNotifications = await notifyApprovedTarSuperAdmins(requestDocument);
 
   return {
-    approvalCount: approvalNotification ? 1 : 0,
+    approvalCount: Array.isArray(approvalNotification)
+      ? approvalNotification.filter(Boolean).length
+      : Number(Boolean(approvalNotification)),
     approvedTarEmailCount: approvedTarNotifications.filter(Boolean).length,
   };
 }
