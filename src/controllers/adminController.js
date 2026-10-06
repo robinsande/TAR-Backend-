@@ -2,7 +2,7 @@ const multer = require("multer");
 const path = require("path");
 const { importEmployeesFromBuffer } = require("../services/employeeImportService");
 const TravelRequest = require("../models/TravelRequest");
-const { notifyFlightBookingSuperAdmins } = require("../services/notificationService");
+const { notifyApprovedTarSuperAdmins } = require("../services/notificationService");
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,7 +40,7 @@ async function resendApprovedTarNotifications(req, res) {
   let emailCount = 0;
 
   for (const request of requests) {
-    const notifications = await notifyFlightBookingSuperAdmins(request);
+    const notifications = await notifyApprovedTarSuperAdmins(request);
     emailCount += notifications.filter(Boolean).length;
   }
 

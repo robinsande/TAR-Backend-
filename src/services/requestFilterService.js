@@ -34,7 +34,7 @@ async function buildRequestFilters(query, user) {
     filters.push({ "itinerary.dateFrom": dateFilter });
   }
 
-  if (query.requestedByEmail && (user.role === "admin" || user.role === "superadmin")) {
+  if (query.requestedByEmail && ["admin", "superadmin", "super_superadmin"].includes(user.role)) {
     const pattern = {
       $regex: escapeRegex(String(query.requestedByEmail).trim()),
       $options: "i",
@@ -51,7 +51,7 @@ async function buildRequestFilters(query, user) {
     filters.push({ requestedBy: { $in: requesters.map((person) => person._id) } });
   }
 
-  if (query.search && (user.role === "admin" || user.role === "superadmin")) {
+  if (query.search && ["admin", "superadmin", "super_superadmin"].includes(user.role)) {
     const pattern = {
       $regex: escapeRegex(String(query.search).trim()),
       $options: "i",

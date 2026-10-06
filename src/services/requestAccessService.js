@@ -47,7 +47,7 @@ async function buildRequestScope(user, listScope) {
   const normalized = String(listScope || "").toLowerCase();
 
   if (user.role === "super_superadmin") {
-    return { status: "approved" };
+    return { status: "approved", "modeOfTravel.aircraft": true };
   }
 
   if (normalized === "mine") {
@@ -82,7 +82,7 @@ async function canAccessRequest(user, request) {
   }
 
   if (user.role === "super_superadmin") {
-    return request.status === "approved";
+    return request.status === "approved" && request.modeOfTravel?.aircraft === true;
   }
 
   const requesterId = idToString(request.requestedBy);

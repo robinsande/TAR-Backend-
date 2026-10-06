@@ -12,7 +12,7 @@ function isEmailConfigured() {
   );
 }
 
-async function sendBrevoApiEmail(to, subject, html, replyTo = null, from = null) {
+async function sendBrevoApiEmail(to, subject, html, text, replyTo = null, from = null) {
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
@@ -25,6 +25,7 @@ async function sendBrevoApiEmail(to, subject, html, replyTo = null, from = null)
       to: [{ email: to }],
       subject,
       htmlContent: html,
+      textContent: text,
       ...(replyTo ? { replyTo: { email: replyTo } } : {}),
     }),
   });
@@ -61,9 +62,10 @@ function getTransporter() {
 async function sendEmail(to, subject, html, options = {}) {
   const replyTo = options.replyTo || null;
   const from = options.from || null;
+  const text = options.text || null;
   if (env.brevoApiKey) {
     try {
-      return await sendBrevoApiEmail(to, subject, html, replyTo, from);
+      return await sendBrevoApiEmail(to, subject, html, text, replyTo, from);
     } catch (error) {
       console.error("Brevo API email failed:", error.message);
       return false;
@@ -83,6 +85,7 @@ async function sendEmail(to, subject, html, options = {}) {
       to,
       subject,
       html,
+      ...(text ? { text } : {}),
       ...(replyTo ? { replyTo } : {}),
     });
     return true;

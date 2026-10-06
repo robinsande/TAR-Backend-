@@ -4,13 +4,17 @@ const { sendEmail } = require("./emailService");
 const { loadPassengerUsers } = require("./passengerService");
 
 function buildNotificationEmail(recipientName, message, entityLabel, entityId) {
-  const approvalUrl = `${require("../config/env").frontendUrl.replace(/\/+$/, "")}/approvals.html`;
+  const approvalUrl = getApprovalsUrl();
   return `
     <p>Hello ${recipientName},</p>
     <p>${message}</p>
     <p>${entityLabel}: ${entityId}</p>
     <p><a href="${approvalUrl}">Open the CARE TAR approvals page</a></p>
   `;
+}
+
+function getApprovalsUrl() {
+  return `${require("../config/env").frontendUrl.replace(/\/+$/, "")}/approvals.html`;
 }
 
 async function createAndSendNotification({
@@ -37,10 +41,11 @@ async function createAndSendNotification({
   const emailOptions = {
     ...(replyTo ? { replyTo } : {}),
     ...(from ? { from } : {}),
+    text: `Hello ${recipient.name},\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${getApprovalsUrl()}`,
   };
-  await sendEmail(recipient.email, subject, html, emailOptions);
+  const emailSent = await sendEmail(recipient.email, subject, html, emailOptions);
 
-  return notification;
+  return emailSent ? notification : null;
 }
 
 function buildTravelRequestNotificationContent(type, requestDocument, audience = "approver", requester = null, extras = {}) {
@@ -230,8 +235,11 @@ async function notifyApprovedTarSuperAdmins(requestDocument) {
     return [];
   }
 
+  const recipientRoles = requestDocument.modeOfTravel?.aircraft === true
+    ? ["super_superadmin"]
+    : ["superadmin", "super_superadmin"];
   const superAdmins = await User.find({
-    role: { $in: ["superadmin", "super_superadmin"] },
+    role: { $in: recipientRoles },
     isActive: true,
   }).select("-passwordHash");
   const requester = requestDocument.requestedBy;
@@ -248,11 +256,11 @@ async function resendTravelRequestNotifications(requestDocument) {
     "new_request",
     requester
   );
-  const flightNotifications = await notifyApprovedTarSuperAdmins(requestDocument);
+  const approvedTarNotifications = await notifyApprovedTarSuperAdmins(requestDocument);
 
   return {
     approvalCount: approvalNotification ? 1 : 0,
-    flightBookingCount: flightNotifications.filter(Boolean).length,
+    approvedTarEmailCount: approvedTarNotifications.filter(Boolean).length,
   };
 }
 

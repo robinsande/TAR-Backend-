@@ -12,13 +12,13 @@ async function main() {
   const requests = await TravelRequest.find({ status: { $in: ["pending", "approved"] } })
     .populate("requestedBy", "name email")
     .sort({ createdAt: 1 });
-  const summary = { requests: 0, approvalEmails: 0, flightBookingEmails: 0 };
+  const summary = { requests: 0, approvalEmails: 0, approvedTarEmails: 0 };
 
   for (const request of requests) {
     const result = await resendTravelRequestNotifications(request);
     summary.requests += 1;
     summary.approvalEmails += result.approvalCount;
-    summary.flightBookingEmails += result.flightBookingCount;
+    summary.approvedTarEmails += result.approvedTarEmailCount;
   }
 
   console.log(JSON.stringify(summary, null, 2));

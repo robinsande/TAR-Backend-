@@ -419,6 +419,10 @@ describe("request scoping and workflow", () => {
     expect(approverEmails.map(([recipient]) => recipient)).toEqual(
       expect.arrayContaining([manager.email, secondApprover.email])
     );
+    const requesterApprovalEmails = sendEmail.mock.calls.filter(
+      ([recipient, subject]) => recipient === requester.email && subject === "Travel request approved"
+    );
+    expect(requesterApprovalEmails).toHaveLength(1);
     approverEmails.forEach(([, , , options]) => {
       expect(options.from).toBeUndefined();
       expect(options.replyTo).toBe(requester.email);
@@ -461,8 +465,11 @@ describe("request scoping and workflow", () => {
     const reminderEmails = sendEmail.mock.calls.filter(([, subject]) =>
       subject === "Reminder: travel request awaiting your approval"
     );
-    expect(reminderEmails).toHaveLength(1);
+    expect(reminderEmails).toHaveLength(2);
     expect(reminderEmails[0][0]).toBe(manager.email);
+    expect(reminderEmails.map(([recipient]) => recipient)).toEqual(
+      expect.arrayContaining([manager.email, secondApprover.email])
+    );
   });
 
   it("shows existing requests to a recreated manager with the same email", async () => {
@@ -501,7 +508,7 @@ describe("request scoping and workflow", () => {
     expect(listResponse.body.data.map((item) => item._id)).toContain(createResponse.body._id);
   });
 
-  it("emails every active superadmin about any approved TAR for travel arrangements", async () => {
+  it("emails every active superadmin, including read-only superadmins, about any approved TAR", async () => {
     sendEmail.mockClear();
     const manager = await createUser({
       name: "Manager Admin",
@@ -517,6 +524,11 @@ describe("request scoping and workflow", () => {
       name: "Travel Desk Backup",
       email: "travel-desk-backup@example.com",
       role: "superadmin",
+    });
+    const readOnlySuperadmin = await createUser({
+      name: "Read Only Travel Desk",
+      email: "read-only-travel-desk@example.com",
+      role: "super_superadmin",
     });
     const requester = await createUser({
       name: "Requester One",
@@ -538,13 +550,19 @@ describe("request scoping and workflow", () => {
     expect(
       await Notification.countDocuments({
         recipient: superadmin._id,
-        type: "flight_booking_required",
+        type: "approved",
       })
     ).toBe(0);
     expect(
       await Notification.countDocuments({
         recipient: secondSuperadmin._id,
-        type: "flight_booking_required",
+        type: "approved",
+      })
+    ).toBe(0);
+    expect(
+      await Notification.countDocuments({
+        recipient: readOnlySuperadmin._id,
+        type: "approved",
       })
     ).toBe(0);
 
@@ -558,25 +576,34 @@ describe("request scoping and workflow", () => {
     expect(
       await Notification.countDocuments({
         recipient: superadmin._id,
-        type: "flight_booking_required",
+        type: "approved",
         request: createResponse.body._id,
       })
     ).toBe(1);
     expect(
       await Notification.countDocuments({
         recipient: secondSuperadmin._id,
-        type: "flight_booking_required",
+        type: "approved",
+        request: createResponse.body._id,
+      })
+    ).toBe(1);
+    expect(
+      await Notification.countDocuments({
+        recipient: readOnlySuperadmin._id,
+        type: "approved",
         request: createResponse.body._id,
       })
     ).toBe(1);
 
-    const arrangementEmails = sendEmail.mock.calls.filter(([, subject]) =>
-      subject === "Approved TAR requires travel arrangements"
+    const approvedEmails = sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "Approved TAR notification"
     );
-    expect(arrangementEmails.map(([recipient]) => recipient).sort()).toEqual([
+    expect(approvedEmails.map(([recipient]) => recipient).sort()).toEqual([
       superadmin.email,
       secondSuperadmin.email,
+      readOnlySuperadmin.email,
     ].sort());
+    expect(approvedEmails[0][3].text).toContain("Open the CARE TAR approvals page:");
 
     sendEmail.mockClear();
     const superadminToken = await login(superadmin.email);
@@ -586,10 +613,131 @@ describe("request scoping and workflow", () => {
 
     expect(resendResponse.status).toBe(200);
     expect(resendResponse.body.requests).toBe(1);
-    expect(resendResponse.body.emailCount).toBe(2);
+    expect(resendResponse.body.emailCount).toBe(3);
     expect(sendEmail.mock.calls.filter(([, subject]) =>
-      subject === "Approved TAR requires travel arrangements"
-    )).toHaveLength(2);
+      subject === "Approved TAR notification"
+    )).toHaveLength(3);
+
+    sendEmail.mockClear();
+    sendEmail.mockResolvedValue(false);
+    const failedResendResponse = await request(app)
+      .post("/api/admin/resend-approved-tar-notifications")
+      .set("Authorization", `Bearer ${superadminToken}`);
+
+    expect(failedResendResponse.status).toBe(200);
+    expect(failedResendResponse.body.emailCount).toBe(0);
+    sendEmail.mockResolvedValue(true);
+  });
+
+  it("limits read-only superadmins to approved TARs requiring flight booking", async () => {
+    const approver = await createUser({
+      name: "Approver Admin",
+      email: "flight-approver@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "flight-requester@example.com",
+    });
+    const readOnlySuperadmin = await createUser({
+      name: "Read Only Superadmin",
+      email: "flight-read-only@example.com",
+      role: "super_superadmin",
+    });
+
+    const flightRequest = await TravelRequest.create({
+      requestedBy: requester._id,
+      status: "approved",
+      ...buildRequestPayload(approver._id, {
+        purposeOfTrip: "Flight to Nairobi",
+        modeOfTravel: { careVehicle: false, publicTransport: false, aircraft: true },
+        passengers: [passengerFor(requester)],
+      }),
+    });
+    const nonFlightRequest = await TravelRequest.create({
+      requestedBy: requester._id,
+      status: "approved",
+      ...buildRequestPayload(approver._id, {
+        purposeOfTrip: "Local field visit",
+        modeOfTravel: { careVehicle: true, publicTransport: false, aircraft: false },
+        passengers: [passengerFor(requester)],
+      }),
+    });
+
+    const token = await login(readOnlySuperadmin.email);
+    const listResponse = await request(app)
+      .get("/api/requests")
+      .set("Authorization", `Bearer ${token}`);
+    const flightDetailResponse = await request(app)
+      .get(`/api/requests/${flightRequest._id}`)
+      .set("Authorization", `Bearer ${token}`);
+    const nonFlightDetailResponse = await request(app)
+      .get(`/api/requests/${nonFlightRequest._id}`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.data.map((item) => item._id)).toEqual([flightRequest._id.toString()]);
+    expect(flightDetailResponse.status).toBe(200);
+    expect(nonFlightDetailResponse.status).toBe(403);
+  });
+
+  it("routes approved flight TAR emails only to read-only superadmins", async () => {
+    const approver = await createUser({
+      name: "Approver Admin",
+      email: "flight-only-approver@example.com",
+      role: "admin",
+    });
+    const regularSuperadmin = await createUser({
+      name: "Superadmin",
+      email: "flight-only-superadmin@example.com",
+      role: "superadmin",
+    });
+    const readOnlySuperadmin = await createUser({
+      name: "Read Only Superadmin",
+      email: "flight-only-readonly@example.com",
+      role: "super_superadmin",
+    });
+    const requester = await createUser({
+      name: "Requester One",
+      email: "flight-only-requester@example.com",
+    });
+
+    const requesterToken = await login(requester.email);
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", `Bearer ${requesterToken}`)
+      .send(buildRequestPayload(approver._id, {
+        modeOfTravel: { careVehicle: false, publicTransport: false, aircraft: true },
+        passengers: [passengerFor(requester)],
+      }));
+
+    expect(createResponse.status).toBe(201);
+    sendEmail.mockClear();
+
+    const approverToken = await login(approver.email);
+    const approveResponse = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/approve`)
+      .set("Authorization", `Bearer ${approverToken}`)
+      .send({ signature: "Approver Signature" });
+
+    expect(approveResponse.status).toBe(200);
+    expect(
+      await Notification.countDocuments({
+        recipient: regularSuperadmin._id,
+        type: "approved",
+        request: createResponse.body._id,
+      })
+    ).toBe(0);
+    expect(
+      await Notification.countDocuments({
+        recipient: readOnlySuperadmin._id,
+        type: "approved",
+        request: createResponse.body._id,
+      })
+    ).toBe(1);
+    expect(sendEmail.mock.calls.filter(([, subject]) =>
+      subject === "Approved TAR notification"
+    ).map(([recipient]) => recipient)).toEqual([readOnlySuperadmin.email]);
   });
 
   it("stores history and resets status when a rejected request is resubmitted", async () => {

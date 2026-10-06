@@ -60,6 +60,8 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 
 The sender address must be verified in Brevo. The SMTP fallback uses Brevo port `2525` to avoid common hosting restrictions on port `587`. Do not put the SMTP key in source control or send it through chat.
 
+Transactional TAR emails include both HTML and plain-text content. Inbox placement is determined by recipient mail systems and cannot be guaranteed by the application. For reliable delivery, verify the sender domain in Brevo and configure its SPF and DKIM DNS records; publish a DMARC policy for the same domain. Check Brevo delivery logs and the recipient's spam/quarantine folders if an email is missing.
+
 ## Frontend integration
 
 This API is designed to work with the static frontend at `care-travel-request-frontend`:
