@@ -104,14 +104,9 @@ async function listUsers(req, res) {
 
 async function createUser(req, res) {
   const { employeeNumber, name, email, position, office, department } = req.body;
-  const requestedRole = req.body.role || "user";
-
-  const role = req.user.role === "admin" ? "user" : requestedRole;
+  const role = req.body.role || "user";
   if (!["user", "admin", "superadmin", "super_superadmin"].includes(role)) {
     throw new HttpError(400, "Role must be user, admin, superadmin, or super_superadmin");
-  }
-  if (["superadmin", "super_superadmin"].includes(role) && req.user.role !== "superadmin") {
-    throw new HttpError(403, "Only a superadmin can create elevated accounts");
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -131,7 +126,7 @@ async function createUser(req, res) {
     office: office || null,
     department: department || null,
     role,
-    managerId: req.user.role === "admin" ? req.user.id : null,
+    managerId: null,
     isActive: true,
     mustSetPassword: false,
     inviteToken: null,

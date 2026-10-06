@@ -44,7 +44,7 @@ router.get("/approvers", asyncHandler(listApprovers));
 router.get("/passengers", asyncHandler(listPassengers));
 router.post(
   "/",
-  requireRole("admin", "superadmin"),
+  requireRole("superadmin"),
   ...createUserValidator,
   validationErrorHandler,
   asyncHandler(createUser)

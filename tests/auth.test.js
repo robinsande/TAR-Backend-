@@ -9,6 +9,7 @@ const mongoose = require("mongoose");
 const createApp = require("../src/app");
 const User = require("../src/models/User");
 const { hashPassword } = require("../src/services/passwordService");
+const { signToken } = require("../src/services/jwtService");
 const { generateInviteToken, getInviteTokenExpiry } = require("../src/services/inviteTokenService");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 
@@ -29,6 +30,54 @@ afterAll(async () => {
 });
 
 describe("account activation", () => {
+  it("does not allow public account registration", async () => {
+    const response = await request(app).post("/api/auth/register").send({
+      name: "New User",
+      email: "new@example.com",
+      password: "NewSecure123!",
+    });
+
+    expect(response.status).toBe(404);
+    expect(await User.countDocuments()).toBe(0);
+  });
+
+  it("allows only superadmins to create accounts", async () => {
+    const admin = await User.create({
+      name: "Admin User",
+      email: "admin@example.com",
+      role: "admin",
+      isActive: true,
+    });
+    const superadmin = await User.create({
+      name: "Superadmin User",
+      email: "superadmin@example.com",
+      role: "superadmin",
+      isActive: true,
+    });
+    const payload = {
+      name: "Created User",
+      email: "created@example.com",
+      role: "user",
+    };
+
+    const adminResponse = await request(app)
+      .post("/api/users")
+      .set("Authorization", `Bearer ${signToken({ userId: admin._id.toString(), role: admin.role })}`)
+      .send(payload);
+
+    expect(adminResponse.status).toBe(403);
+    expect(await User.exists({ email: payload.email })).toBeNull();
+
+    const superadminResponse = await request(app)
+      .post("/api/users")
+      .set("Authorization", `Bearer ${signToken({ userId: superadmin._id.toString(), role: superadmin.role })}`)
+      .send(payload);
+
+    expect(superadminResponse.status).toBe(201);
+    expect(superadminResponse.body.temporaryPassword).toBeTruthy();
+    expect(await User.exists({ email: payload.email, role: "user" })).toBeTruthy();
+  });
+
   it("activates a new account with a valid invite token", async () => {
     const token = generateInviteToken();
 
