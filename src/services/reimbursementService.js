@@ -108,6 +108,7 @@ function buildReimbursementDraftData(
     financeAdminId: payload.financeAdminId,
     financeCcAdminId: payload.financeCcAdminId || null,
     paymentRequestPurpose: payload.paymentRequestPurpose,
+    peopleSoftAccount: String(payload.peopleSoftAccount || "").trim(),
     paymentDetails: payload.paymentDetails || {},
     requesterSignedName: payload.requesterSignedName,
     requesterSignedAt: new Date(),
@@ -145,6 +146,7 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
     financeAdminId: report.financeAdminId,
     financeCcAdminId: report.financeCcAdminId,
     paymentRequestPurpose: report.paymentRequestPurpose,
+    peopleSoftAccount: report.peopleSoftAccount,
     paymentDetails: report.paymentDetails,
     employeeNumber: report.employeeNumber,
     department: report.department,
@@ -176,6 +178,7 @@ function applyReimbursementResubmission(report, payload, supervisorId) {
   report.department = payload.department || report.department;
   report.position = payload.position || report.position;
   report.baseLocation = payload.baseLocation;
+  report.peopleSoftAccount = String(payload.peopleSoftAccount || "").trim();
   report.version += 1;
   report.status = supervisorId
     ? "SUBMITTED_TO_SUPERVISOR"

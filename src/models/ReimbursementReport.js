@@ -91,6 +91,7 @@ const reimbursementReportSchema = new mongoose.Schema(
     requesterSignedAt: { type: Date, default: Date.now },
     requesterSignature: { type: String, trim: true, default: null },
     paymentRequestPurpose: { type: String, trim: true, default: null },
+    peopleSoftAccount: { type: String, trim: true, default: "", maxlength: 80 },
     paymentDetails: {
       paymentMethod: {
         type: String,
@@ -109,7 +110,7 @@ const reimbursementReportSchema = new mongoose.Schema(
       type: [{
         documentType: {
           type: String,
-          enum: ["receipt_ticket", "back_to_office", "terms_of_reference", "other"],
+          enum: ["receipt_ticket", "expense_document", "back_to_office", "terms_of_reference", "other"],
           default: "other",
         },
         category: {

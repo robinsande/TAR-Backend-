@@ -6,6 +6,7 @@ jest.mock("../src/services/emailService", () => ({
 
 const request = require("supertest");
 const mongoose = require("mongoose");
+const { PDFDocument: TestPDFDocument } = require("pdf-lib");
 const createApp = require("../src/app");
 const {
   buildVoucherDailySummary,
@@ -48,6 +49,11 @@ async function createUser(overrides = {}) {
 
 async function login(email, password = "Password123!") {
   return loginWithMfa(app, email, password);
+}
+
+async function getPdfPageCount(buffer) {
+  const pdf = await TestPDFDocument.load(buffer);
+  return pdf.getPageCount();
 }
 
 function passengerFor(user) {
@@ -254,7 +260,7 @@ describe("reimbursement workflow", () => {
       .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
     expect(preview.status).toBe(200);
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
-    expect((preview.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || [])).toHaveLength(3);
+    expect(await getPdfPageCount(preview.body)).toBe(3);
 
     const response = await request(app)
       .post("/api/reimbursements")
@@ -1397,11 +1403,12 @@ describe("reimbursement workflow", () => {
       projectId: "PROJECT1",
       activityId: "ACT1",
       departmentId: "DEPT1",
-    })).toEqual([
+    }, "PS-ACCOUNT-001")).toEqual([
       "01/07/2026",
       "Per diem while in Dadaab",
       "3,500.00",
       "3 invoices",
+      "PS-ACCOUNT-001",
       "FUND1",
       "PROJECT1",
       "ACT1",
@@ -1440,7 +1447,20 @@ describe("reimbursement workflow", () => {
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
+      .send(buildReimbursementPayload(travelRequestId, manager._id, {
+        supervisorId: "",
+        peopleSoftAccount: "PS-ACCOUNT-001",
+        lineItems: [
+          {
+            expenseDate: "2026-07-06T00:00:00.000Z",
+            location: "Kisumu",
+            category: "OTHER EXPENSES",
+            description: "Other expense",
+            amount: 750,
+          },
+        ],
+      }));
+    expect(created.body.peopleSoftAccount).toBe("PS-ACCOUNT-001");
 
     const receipt = await request(app)
       .post(`/api/reimbursements/${created.body._id}/attachments`)
@@ -1466,6 +1486,24 @@ describe("reimbursement workflow", () => {
         filename: "terms-of-reference.pdf",
         contentType: "application/pdf",
       });
+    const expenseSupportPdf = await TestPDFDocument.create();
+    expenseSupportPdf.addPage();
+    const expenseDocument = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "expense_document")
+      .attach("file", Buffer.from(await expenseSupportPdf.save()), {
+        filename: "other-expense-support.pdf",
+        contentType: "application/pdf",
+      });
+    const expenseImage = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "expense_document")
+      .attach("file", Buffer.from(testRequesterSignature.split(",")[1], "base64"), {
+        filename: "other-expense-scan.png",
+        contentType: "image/png",
+      });
 
     expect(receipt.status).toBe(201);
     expect(receipt.body).toMatchObject({
@@ -1482,6 +1520,18 @@ describe("reimbursement workflow", () => {
       documentType: "terms_of_reference",
       category: "line_manager",
     });
+    expect(expenseDocument.status).toBe(201);
+    expect(expenseDocument.body).toMatchObject({
+      documentType: "expense_document",
+      category: "financial",
+    });
+    expect(expenseImage.status).toBe(201);
+
+    const mergedPdf = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/pdf`)
+      .set("Authorization", "Bearer " + requesterToken);
+    expect(mergedPdf.status).toBe(200);
+    expect(await getPdfPageCount(mergedPdf.body)).toBe(5);
 
     const lineManagerToken = await login(manager.email);
     const lineManagerPreview = await request(app)
@@ -1489,6 +1539,18 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + lineManagerToken);
     expect(lineManagerPreview.status).toBe(200);
     expect(lineManagerPreview.headers["content-disposition"]).toMatch(/^inline;/);
+
+    await ExpenseLineItem.deleteMany({ report: created.body._id });
+    const expenseWithoutTerLine = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "expense_document")
+      .attach("file", Buffer.from(await expenseSupportPdf.save()), {
+        filename: "unmatched-expense.pdf",
+        contentType: "application/pdf",
+      });
+    expect(expenseWithoutTerLine.status).toBe(400);
+    expect(expenseWithoutTerLine.body.message).toMatch(/OTHER EXPENSES/i);
   }, 30000);
 
   it("downloads a reimbursement PDF", async () => {

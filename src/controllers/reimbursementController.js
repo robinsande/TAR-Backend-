@@ -8,6 +8,7 @@ const { EXPENSE_CATEGORIES } = require("../constants/expenseCategories");
 const {
   storeAttachment,
   streamAttachment,
+  getAttachmentBuffer,
   deleteAttachment,
 } = require("../services/attachmentStorageService");
 const { createAuditLog } = require("../services/auditLogService");
@@ -28,6 +29,7 @@ const {
 } = require("../services/passengerService");
 const REIMBURSEMENT_ATTACHMENT_AUDIENCES = {
   receipt_ticket: "financial",
+  expense_document: "financial",
   back_to_office: "line_manager",
   terms_of_reference: "line_manager",
 };
@@ -143,6 +145,14 @@ function assertMaximumExpenseDays(lineItems) {
   if (days.size > 30) {
     throw new HttpError(400, "A reimbursement can include expenses for no more than 30 days");
   }
+}
+
+function normalizePeopleSoftAccount(value) {
+  const account = String(value || "").trim();
+  if (account.length > 80) {
+    throw new HttpError(400, "PeopleSoft Account must be 80 characters or fewer");
+  }
+  return account;
 }
 
 function assertStandardExpenseRates(lineItems) {
@@ -291,6 +301,7 @@ async function createReimbursement(req, res) {
   );
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
+  const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
 
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
@@ -309,6 +320,7 @@ async function createReimbursement(req, res) {
           financeCcAdminId: financeCcAdmin?._id || null,
           requesterSignedName,
           requesterSignature,
+          peopleSoftAccount,
         },
         submitter._id,
         supervisor?._id || null,
@@ -387,6 +399,7 @@ async function previewReimbursement(req, res) {
 
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
+  const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
 
@@ -398,7 +411,7 @@ async function previewReimbursement(req, res) {
     (total, item) => total + Number(item.amount.toString()),
     0
   );
-  buildReimbursementPdf(res, {
+  await buildReimbursementPdf(res, {
     _id: "preview",
     travelRequest,
     submittedBy: submitter,
@@ -415,6 +428,7 @@ async function previewReimbursement(req, res) {
     position: req.body.position || submitter.position || "N/A",
     baseLocation: req.body.baseLocation,
     paymentRequestPurpose: req.body.paymentRequestPurpose,
+    peopleSoftAccount,
     paymentDetails: req.body.paymentDetails,
     lineItems,
     totalAmountKsh,
@@ -568,6 +582,7 @@ async function updateReimbursement(req, res) {
   );
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, req.currentUser);
+  const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
   const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
@@ -595,6 +610,7 @@ async function updateReimbursement(req, res) {
   report.requesterSignedAt = new Date();
   report.requesterSignature = requesterSignature;
   report.paymentRequestPurpose = req.body.paymentRequestPurpose;
+  report.peopleSoftAccount = peopleSoftAccount;
   report.paymentDetails = req.body.paymentDetails || {};
   report.supervisorSignedName = null;
   report.supervisorSignature = null;
@@ -833,7 +849,15 @@ async function downloadReimbursementPdf(req, res) {
   await ensureCanAccessReport(req.user, report);
 
   const [response] = await attachLineItems([report]);
-  buildReimbursementPdf(res, response);
+  const expenseDocuments = await Promise.all(
+    (response.attachments || [])
+      .filter((attachment) => attachment.documentType === "expense_document")
+      .map(async (attachment) => ({
+        buffer: await getAttachmentBuffer(attachment.storageId),
+        mimeType: attachment.mimeType,
+      }))
+  );
+  await buildReimbursementPdf(res, response, expenseDocuments);
 }
 
 async function downloadPaymentVoucherPdf(req, res) {
@@ -859,8 +883,14 @@ async function uploadReimbursementAttachment(req, res) {
   if (!req.file) throw new HttpError(400, "Select a document to upload");
 
   const documentType = req.body.documentType || "other";
-  if (!["receipt_ticket", "back_to_office", "terms_of_reference", "other"].includes(documentType)) {
+  if (!["receipt_ticket", "expense_document", "back_to_office", "terms_of_reference", "other"].includes(documentType)) {
     throw new HttpError(400, "Select a valid document type");
+  }
+  if (
+    documentType === "expense_document" &&
+    !(await ExpenseLineItem.exists({ report: report._id, category: "OTHER EXPENSES" }))
+  ) {
+    throw new HttpError(400, "Add an Other Expenses line to the TER before uploading its supporting document");
   }
   const category = REIMBURSEMENT_ATTACHMENT_AUDIENCES[documentType] || req.body.category;
   if (!["financial", "supervisor", "line_manager"].includes(category)) {
@@ -877,6 +907,12 @@ async function uploadReimbursementAttachment(req, res) {
   ]);
   if (!allowedMimeTypes.has(req.file.mimetype)) {
     throw new HttpError(400, "Upload a PDF, image, Word document, or Excel document");
+  }
+  if (
+    documentType === "expense_document" &&
+    !["application/pdf", "image/jpeg", "image/png"].includes(req.file.mimetype)
+  ) {
+    throw new HttpError(400, "Expense documents added to the merged PDF must be PDF, JPEG, or PNG files");
   }
 
   const storageId = await storeAttachment(req.file, {

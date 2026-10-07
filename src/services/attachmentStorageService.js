@@ -28,6 +28,18 @@ function streamAttachment(storageId, res) {
   downloadStream.pipe(res);
 }
 
+function getAttachmentBuffer(storageId) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const downloadStream = getBucket().openDownloadStream(
+      new mongoose.Types.ObjectId(storageId)
+    );
+    downloadStream.on("data", (chunk) => chunks.push(chunk));
+    downloadStream.on("error", reject);
+    downloadStream.on("end", () => resolve(Buffer.concat(chunks)));
+  });
+}
+
 async function deleteAttachment(storageId) {
   const bucket = getBucket();
   await bucket.delete(new mongoose.Types.ObjectId(storageId));
@@ -36,5 +48,6 @@ async function deleteAttachment(storageId) {
 module.exports = {
   storeAttachment,
   streamAttachment,
+  getAttachmentBuffer,
   deleteAttachment,
 };
