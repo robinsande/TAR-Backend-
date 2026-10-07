@@ -18,11 +18,19 @@ const {
   buildEmptyTravelExpenseReportPdf,
   getVoucherExpenseDescription,
 } = require("../services/pdfService");
-const { getTravelRequestPopulateQuery } = require("../services/travelRequestService");
+const {
+  getTravelRequestPopulateQuery,
+  getTravelRequestPdfPopulateQuery,
+} = require("../services/travelRequestService");
 const {
   ensureUserCanClaimReimbursement,
   ensureApproverNotOnRequest,
 } = require("../services/passengerService");
+const REIMBURSEMENT_ATTACHMENT_AUDIENCES = {
+  receipt_ticket: "financial",
+  back_to_office: "line_manager",
+  terms_of_reference: "line_manager",
+};
 const {
   buildReimbursementTeamScope,
   ensureCanAccessReport,
@@ -162,6 +170,11 @@ async function resolveOptionalSupervisor(supervisorId, submitter, lineManager, p
 async function resolveOptionalFinanceCcAdmin(financeCcAdminId, financeAdmin) {
   if (!financeCcAdminId) return null;
 
+  const financeAdminId = financeAdmin?._id || financeAdmin;
+  if (String(financeCcAdminId) === String(financeAdminId)) {
+    throw new HttpError(400, "The Finance Admin to copy must differ from the assigned Finance approver");
+  }
+
   const financeCcAdmin = await User.findOne({
     _id: financeCcAdminId,
     $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
@@ -169,9 +182,6 @@ async function resolveOptionalFinanceCcAdmin(financeCcAdminId, financeAdmin) {
   });
   if (!financeCcAdmin) {
     throw new HttpError(400, "Select an active Finance Admin to copy");
-  }
-  if (String(financeCcAdmin._id) === String(financeAdmin._id)) {
-    throw new HttpError(400, "The Finance Admin to copy must differ from the assigned Finance approver");
   }
   return financeCcAdmin;
 }
@@ -341,7 +351,7 @@ async function createReimbursement(req, res) {
 
 async function previewReimbursement(req, res) {
   const submitter = req.currentUser;
-  const travelRequest = await getTravelRequestPopulateQuery(
+  const travelRequest = await getTravelRequestPdfPopulateQuery(
     TravelRequest.findById(req.body.travelRequestId)
   );
 
@@ -350,29 +360,30 @@ async function previewReimbursement(req, res) {
   }
   ensureUserCanClaimReimbursement(travelRequest, submitter._id);
 
-  const lineManager = await User.findOne({
-    _id: travelRequest.selected_approver_id?._id || travelRequest.selected_approver_id,
-    role: { $in: ["admin", "approver_budget_holder"] },
-    isActive: true,
-  });
-  if (!lineManager) {
+  const lineManager = travelRequest.selected_approver_id;
+  if (
+    !lineManager ||
+    !lineManager.isActive ||
+    !["admin", "approver_budget_holder"].includes(lineManager.role)
+  ) {
     throw new HttpError(400, "The selected approved TAR does not have an active Line Manager");
   }
   ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
-  const supervisor = await resolveOptionalSupervisor(
-    req.body.supervisorId,
-    submitter,
-    lineManager,
-    travelRequest.passengers
-  );
-
-  const financeAdmin = await User.findOne({
-    _id: req.body.financeAdminId,
-    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
-    isActive: true,
-  });
+  const [supervisor, financeAdmin, financeCcAdmin] = await Promise.all([
+    resolveOptionalSupervisor(
+      req.body.supervisorId,
+      submitter,
+      lineManager,
+      travelRequest.passengers
+    ),
+    User.findOne({
+      _id: req.body.financeAdminId,
+      $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+      isActive: true,
+    }),
+    resolveOptionalFinanceCcAdmin(req.body.financeCcAdminId, req.body.financeAdminId),
+  ]);
   if (!financeAdmin) throw new HttpError(400, "Select an active Finance Admin");
-  await resolveOptionalFinanceCcAdmin(req.body.financeCcAdminId, financeAdmin);
 
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
@@ -755,6 +766,7 @@ async function updateReimbursementStatus(req, res) {
           report.financeDeclineReason = comment.trim();
         }
       }
+
       report.decision = {
         decidedBy: req.user.id,
         decidedAt: new Date(),
@@ -846,7 +858,11 @@ async function uploadReimbursementAttachment(req, res) {
   }
   if (!req.file) throw new HttpError(400, "Select a document to upload");
 
-  const category = req.body.category;
+  const documentType = req.body.documentType || "other";
+  if (!["receipt_ticket", "back_to_office", "terms_of_reference", "other"].includes(documentType)) {
+    throw new HttpError(400, "Select a valid document type");
+  }
+  const category = REIMBURSEMENT_ATTACHMENT_AUDIENCES[documentType] || req.body.category;
   if (!["financial", "supervisor", "line_manager"].includes(category)) {
     throw new HttpError(400, "Select a valid document audience");
   }
@@ -866,9 +882,11 @@ async function uploadReimbursementAttachment(req, res) {
   const storageId = await storeAttachment(req.file, {
     reimbursementId: String(report._id),
     category,
+    documentType,
   });
   try {
     report.attachments.push({
+      documentType,
       category,
       originalName: req.file.originalname,
       storageId,
@@ -884,6 +902,7 @@ async function uploadReimbursementAttachment(req, res) {
   return res.status(201).json({
     id: report.attachments[report.attachments.length - 1]._id,
     originalName: req.file.originalname,
+    documentType,
     category,
   });
 }
@@ -901,9 +920,13 @@ async function downloadReimbursementAttachment(req, res) {
   }
 
   res.setHeader("Content-Type", attachment.mimeType);
+  const canPreviewInline =
+    attachment.mimeType === "application/pdf" ||
+    attachment.mimeType === "image/jpeg" ||
+    attachment.mimeType === "image/png";
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${encodeURIComponent(attachment.originalName)}"`
+    `${req.query.view === "true" && canPreviewInline ? "inline" : "attachment"}; filename="${encodeURIComponent(attachment.originalName)}"`
   );
   streamAttachment(attachment.storageId, res);
 }

@@ -1167,18 +1167,10 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
     "PeopleSoft Department ID",
   ];
   const tableWidth = widths.reduce((sum, width) => sum + width, 0);
-  const daysWithItems = days.map((day) => {
-    const dayKey = day.date ? day.date.toISOString().slice(0, 10) : null;
-    const items = lineItems.filter((item) => {
-      if (!item.expenseDate) return !dayKey;
-      return new Date(item.expenseDate).toISOString().slice(0, 10) === dayKey;
-    });
-    return {
-      ...day,
-      items,
-      total: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    };
-  });
+  const daysWithItems = days.map((day) => ({
+    ...day,
+    total: Object.values(day.amounts).reduce((sum, amount) => sum + Number(amount || 0), 0),
+  }));
   const compact = daysWithItems.length > 5;
   const headerHeight = 27;
   const rowHeight = layout.rowHeight;
@@ -1333,6 +1325,7 @@ function buildTerDayBuckets(lineItems = []) {
         date: dateValue,
         location: item.location || "—",
         amounts: {},
+        items: [],
       });
     }
     const bucket = byKey.get(key);
@@ -1342,6 +1335,7 @@ function buildTerDayBuckets(lineItems = []) {
     const category = resolveExpenseCategory(item);
     bucket.amounts[category] =
       (bucket.amounts[category] || 0) + Number(item.amount || 0);
+    bucket.items.push(item);
   });
 
   return [...byKey.values()].sort((a, b) => {
@@ -1549,18 +1543,6 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
     y += 15;
   }
 
-  const expenseRows = [
-    ["PER DIEM (M&I)", "PER DIEM (M&I)"],
-    ["BREAKFAST", "BREAKFAST"],
-    ["LUNCH", "LUNCH"],
-    ["DINNER", "DINNER"],
-    ["INCIDENTALS", "INCIDENTALS"],
-    ["HOTEL ROOM & TAXES", "HOTEL ROOM & TAXES"],
-    ["OTHER EXPENSES", "OTHER EXPENSES"],
-    ["AIRPORT TAXES & VISA FEES", "AIRPORT TAXES & VISA FEES"],
-    ["TAXI/LOCAL TRANSPORTATION", "TAXI/LOCAL TRANSPORTATION"],
-    ["VEHICLE FUEL", "VEHICLE FUEL"],
-  ];
   const dayHeaders = ["DAY", "DATE", "LOCATION", "EX. RATE", "REF", "TIME OF DEPARTURE", "TIME OF ARRIVAL", "ITEM DESCRIPTION"];
   for (const [index, header] of dayHeaders.entries()) {
     const rowHeight = index < 5 ? 14 : 16;
@@ -1589,8 +1571,21 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
   }
 
   const groupedRows = [
-    { title: "PER DIEM (M&I)", categories: expenseRows.slice(0, 6).map((row) => row[1]) },
-    { title: "OTHER EXPENSES", categories: expenseRows.slice(6).map((row) => row[1]) },
+    {
+      title: "PER DIEM (M&I)",
+      categories: ["PER DIEM (M&I)", "BREAKFAST", "LUNCH", "DINNER"],
+    },
+    {
+      title: "OTHER EXPENSES",
+      categories: [
+        "INCIDENTALS",
+        "HOTEL ROOM & TAXES",
+        "OTHER EXPENSES",
+        "AIRPORT TAXES & VISA FEES",
+        "TAXI/LOCAL TRANSPORTATION",
+        "VEHICLE FUEL",
+      ],
+    },
   ];
   for (const group of groupedRows) {
     cell(tableX, y, tableWidth, 15, group.title, { bold: true, fill: "#c8c8c8", size: 7 });

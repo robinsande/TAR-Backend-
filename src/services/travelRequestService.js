@@ -11,6 +11,19 @@ function getTravelRequestPopulateQuery(query) {
     .populate("passengers.user", "-passwordHash");
 }
 
+function getTravelRequestPdfPopulateQuery(query) {
+  return query
+    .populate("requestedBy", "name employeeNumber office")
+    .populate("selected_approver_id", "name position role isActive")
+    .populate({
+      path: "selected_budget_holder_id",
+      populate: { path: "user", select: "name email" },
+    })
+    .populate("budgetHolderDecision.decidedBy", "name")
+    .populate("decision.decidedBy", "name position")
+    .populate("passengers.user", "name employeeNumber");
+}
+
 async function populateTravelRequestById(requestId) {
   return getTravelRequestPopulateQuery(TravelRequest.findById(requestId));
 }
@@ -87,6 +100,7 @@ function applyRequestResubmission(requestDocument, payload, approvers, passenger
 
 module.exports = {
   getTravelRequestPopulateQuery,
+  getTravelRequestPdfPopulateQuery,
   populateTravelRequestById,
   buildTravelRequestResponse,
   getEditableRequestSnapshot,

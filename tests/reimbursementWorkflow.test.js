@@ -471,7 +471,7 @@ describe("reimbursement workflow", () => {
 
     expect(valid.status).toBe(201);
     expect(valid.body.lineItems[0].category).toBe("LUNCH");
-    expect(valid.body.lineItems[0].description).toBe("Travel expense");
+    expect(valid.body.lineItems[0].description).toBe("Per diem while in Kisumu");
     expect(valid.body.totalAmountKsh).toBe(1000);
 
     const wrongStandardRate = await request(app)
@@ -814,9 +814,15 @@ describe("reimbursement workflow", () => {
       }));
     const report = await ReimbursementReport.findById(created.body._id);
     report.attachments.push(
-      ...["financial", "supervisor", "line_manager"].map((category) => ({
+      ...[
+        ["financial", "receipt_ticket"],
+        ["supervisor", "other"],
+        ["line_manager", "back_to_office"],
+        ["line_manager", "terms_of_reference"],
+      ].map(([category, documentType]) => ({
         category,
-        originalName: `${category}.pdf`,
+        documentType,
+        originalName: `${documentType}.pdf`,
         storageId: `${category}-attachment`,
         mimeType: "application/pdf",
         size: 1,
@@ -872,12 +878,15 @@ describe("reimbursement workflow", () => {
     expect(reimbursementList.body).toHaveLength(1);
     expect(reimbursementDetail.status).toBe(200);
     expect(reimbursementDetail.body.approvalHistory[0].performedBy.name).toBe(requester.name);
-    expect(reimbursementDetail.body.attachments).toHaveLength(3);
-    expect(financeDetail.body.attachments.map((attachment) => attachment.category)).toEqual(["financial"]);
+    expect(reimbursementDetail.body.attachments).toHaveLength(4);
+    expect(financeDetail.body.attachments.map((attachment) => attachment.documentType)).toEqual(["receipt_ticket"]);
     expect(lineManagerDetail.body.attachments.map((attachment) => attachment.category)).toEqual(
-      expect.arrayContaining(["financial", "line_manager"])
+      expect.arrayContaining(["financial", "line_manager", "line_manager"])
     );
-    expect(lineManagerDetail.body.attachments).toHaveLength(2);
+    expect(lineManagerDetail.body.attachments.map((attachment) => attachment.documentType)).toEqual(
+      expect.arrayContaining(["receipt_ticket", "back_to_office", "terms_of_reference"])
+    );
+    expect(lineManagerDetail.body.attachments).toHaveLength(3);
     expect(forbiddenApproval.status).toBe(403);
   }, 30000);
 
@@ -1379,6 +1388,7 @@ describe("reimbursement workflow", () => {
     expect(buildVoucherDailySummary({
       date: new Date("2026-07-01T00:00:00.000Z"),
       items: [
+        { category: "BREAKFAST", description: "Breakfast", amount: 1000, invoiceNumber: "INV-0" },
         { category: "LUNCH", description: "Lunch", amount: 1000, invoiceNumber: "INV-1" },
         { category: "DINNER", description: "Dinner", amount: 1500, invoiceNumber: "INV-2" },
       ],
@@ -1390,8 +1400,8 @@ describe("reimbursement workflow", () => {
     })).toEqual([
       "01/07/2026",
       "Per diem while in Dadaab",
-      "2,500.00",
-      "2 invoices",
+      "3,500.00",
+      "3 invoices",
       "FUND1",
       "PROJECT1",
       "ACT1",
@@ -1412,6 +1422,73 @@ describe("reimbursement workflow", () => {
       .send(buildReimbursementPayload(overLimitTravelRequestId, manager._id, { lineItems }));
     expect(response.status).toBe(400);
     expect(response.body.message).toMatch(/30 days/);
+  }, 30000);
+
+  it("stores receipts for Finance and keeps Back-to-Office and TOR files separate for Line Managers", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager-documents@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester Documents",
+      email: "requester-documents@example.com",
+      managerId: manager._id,
+    });
+    const travelRequestId = await createApprovedTravelRequest(manager, requester);
+    const requesterToken = await login(requester.email);
+    const created = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
+
+    const receipt = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "receipt_ticket")
+      .attach("file", Buffer.from("receipt"), {
+        filename: "receipt.pdf",
+        contentType: "application/pdf",
+      });
+    const backToOffice = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "back_to_office")
+      .attach("file", Buffer.from("report"), {
+        filename: "back-to-office.pdf",
+        contentType: "application/pdf",
+      });
+    const tor = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "terms_of_reference")
+      .attach("file", Buffer.from("terms"), {
+        filename: "terms-of-reference.pdf",
+        contentType: "application/pdf",
+      });
+
+    expect(receipt.status).toBe(201);
+    expect(receipt.body).toMatchObject({
+      documentType: "receipt_ticket",
+      category: "financial",
+    });
+    expect(backToOffice.status).toBe(201);
+    expect(backToOffice.body).toMatchObject({
+      documentType: "back_to_office",
+      category: "line_manager",
+    });
+    expect(tor.status).toBe(201);
+    expect(tor.body).toMatchObject({
+      documentType: "terms_of_reference",
+      category: "line_manager",
+    });
+
+    const lineManagerToken = await login(manager.email);
+    const lineManagerPreview = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/attachments/${tor.body.id}?view=true`)
+      .set("Authorization", "Bearer " + lineManagerToken);
+    expect(lineManagerPreview.status).toBe(200);
+    expect(lineManagerPreview.headers["content-disposition"]).toMatch(/^inline;/);
   }, 30000);
 
   it("downloads a reimbursement PDF", async () => {

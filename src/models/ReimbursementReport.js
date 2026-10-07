@@ -107,6 +107,11 @@ const reimbursementReportSchema = new mongoose.Schema(
     financeSignature: { type: String, trim: true, default: null, maxlength: 1500000 },
     attachments: {
       type: [{
+        documentType: {
+          type: String,
+          enum: ["receipt_ticket", "back_to_office", "terms_of_reference", "other"],
+          default: "other",
+        },
         category: {
           type: String,
           enum: ["financial", "supervisor", "line_manager"],
