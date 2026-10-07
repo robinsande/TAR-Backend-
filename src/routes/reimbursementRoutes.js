@@ -18,6 +18,7 @@ const {
   updateReimbursement,
   updateReimbursementStatus,
   downloadReimbursementPdf,
+  downloadPaymentVoucherPdf,
   uploadReimbursementAttachment,
   downloadReimbursementAttachment,
   getExpenseCategories,
@@ -70,6 +71,7 @@ router.patch(
 
 router.get("/:id", asyncHandler(getReimbursementById));
 router.get("/:id/pdf", asyncHandler(downloadReimbursementPdf));
+router.get("/:id/payment-voucher.pdf", asyncHandler(downloadPaymentVoucherPdf));
 router.post(
   "/:id/attachments",
   uploadRequestAttachments.single("file"),

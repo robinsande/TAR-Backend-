@@ -7,7 +7,7 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - Account activation flow: imported users must set a password before logging in.
 - Approver selection via `selected_approver_id` (eligible admins), enforced on the server.
 - Travel request lifecycle support for create, approve, reject, and rejected-request resubmit.
-- Reimbursements with sequential Supervisor → TAR Line Manager → Finance Admin approvals, approval history, expense support documents, and merged PDF export.
+- Reimbursements with sequential Supervisor → TAR Line Manager → Finance Admin approvals, approval history, expense support documents, a one-page Payment Voucher Form PDF, and merged PDF export.
 - Read-only Auditor access to organization-wide TARs, reimbursements, and supporting documents.
 - In-app notifications plus Brevo email notifications.
 - Audit logging for request and reimbursement lifecycle events.
@@ -137,6 +137,7 @@ Test logins (password `Password123!`):
 - `PATCH /api/reimbursements/:id` (owner, declined only; resubmission restarts the assigned Supervisor stage or goes directly to the TAR Line Manager when no Supervisor is assigned)
 - `PATCH /api/reimbursements/:id/status` (`review_started`, `approved`, `rejected`, or `completed`; backend checks the assigned reviewer and current stage)
 - `POST /api/reimbursements/:id/attachments` and `GET /api/reimbursements/:id/attachments/:attachmentId` (server-enforced audience access)
+- `GET /api/reimbursements/:id/payment-voucher.pdf` (single-page landscape Payment Voucher Form)
 - `GET /api/reimbursements/:id/pdf`
 
 ### Reimbursement approval and document access
@@ -147,7 +148,7 @@ When a separate Supervisor is selected, approvals proceed in order: `SUBMITTED_T
 
 The Line Manager cannot be assigned to the Supervisor role on the same reimbursement. Each approval stage must be completed by its own assigned approver. A separate Finance Admin may optionally be copied when the report reaches Finance; that copy recipient gets read-only access to the financial package and cannot approve or complete payment.
 
-The merged PDF contains the payment request, landscape Travel Expense Report pages (six expense days per page, up to 30 distinct days), and the approved TAR. On the Payment Request, the requester is shown under “Prepared by,” Finance under “Reviewed by,” and the TAR Line Manager under “Approved by”; each designation is read from the approver’s profile position. New reimbursement requests use M-PESA only and collect the requester’s M-PESA mobile number; other payment and bank fields remain blank template fields. The PeopleSoft account classification is read from the selected approved TAR. Finance Admins and Finance copy recipients can access only financial attachments; Line Managers can access financial and line-manager attachments; Supervisors can access supervisor and financial attachments. Auditors and superadmins have read-only access to all reimbursement records and documents. Back-to-Office Reports and TORs should be uploaded with the Line Manager audience, not the financial audience.
+The merged PDF contains the payment request, landscape Travel Expense Report pages (six expense days per page, up to 30 distinct days), and the approved TAR. On the Payment Request, the requester is shown under “Prepared by,” Finance under “Reviewed by,” and the TAR Line Manager under “Approved by”; each designation is read from the approver’s profile position. New reimbursement requests use M-PESA only and collect the requester’s M-PESA mobile number; other payment and bank fields remain blank template fields. The PeopleSoft account classification is read from the selected approved TAR. Requesters may save a PNG signature to their own account; it is returned only by their authenticated `/users/me` endpoint and may be removed there. Finance Admins and Finance copy recipients can access only financial attachments; Line Managers can access financial and line-manager attachments; Supervisors can access supervisor and financial attachments. Auditors and superadmins have read-only access to all reimbursement records and documents. Back-to-Office Reports and TORs should be uploaded with the Line Manager audience, not the financial audience.
 
 ### Notifications (JWT)
 - `GET /api/notifications`

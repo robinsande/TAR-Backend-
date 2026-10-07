@@ -65,6 +65,13 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    savedSignature: {
+      type: String,
+      trim: true,
+      maxlength: 1500000,
+      default: null,
+      select: false,
+    },
     role: {
       type: String,
       enum: ["user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"],

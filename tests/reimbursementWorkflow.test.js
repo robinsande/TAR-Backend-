@@ -198,6 +198,37 @@ beforeEach(async () => {
 });
 
 describe("reimbursement workflow", () => {
+  it("saves, returns, and clears a signature only through the owner's profile", async () => {
+    const requester = await createUser({ email: "signature-owner@example.com" });
+    const token = await login(requester.email);
+
+    const saved = await request(app)
+      .patch("/api/users/me")
+      .set("Authorization", "Bearer " + token)
+      .send({ savedSignature: testRequesterSignature });
+    expect(saved.status).toBe(200);
+    expect(saved.body.savedSignature).toBe(testRequesterSignature);
+
+    const profile = await request(app)
+      .get("/api/users/me")
+      .set("Authorization", "Bearer " + token);
+    expect(profile.status).toBe(200);
+    expect(profile.body.savedSignature).toBe(testRequesterSignature);
+
+    const invalid = await request(app)
+      .patch("/api/users/me")
+      .set("Authorization", "Bearer " + token)
+      .send({ savedSignature: "data:image/jpeg;base64,ZmFrZQ==" });
+    expect(invalid.status).toBe(400);
+
+    const cleared = await request(app)
+      .patch("/api/users/me")
+      .set("Authorization", "Bearer " + token)
+      .send({ savedSignature: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.savedSignature).toBeNull();
+  });
+
   it("submits a reimbursement report with line items and calculated total", async () => {
     const manager = await createUser({
       name: "Manager Admin",
@@ -1333,6 +1364,13 @@ describe("reimbursement workflow", () => {
       }));
     expect(accepted.status).toBe(201);
     expect(accepted.body.lineItems).toHaveLength(30);
+    const voucherPdf = await request(app)
+      .get(`/api/reimbursements/${accepted.body._id}/payment-voucher.pdf`)
+      .set("Authorization", "Bearer " + requesterToken);
+    expect(voucherPdf.status).toBe(200);
+    expect(voucherPdf.headers["content-type"]).toMatch(/application\/pdf/);
+    expect((voucherPdf.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || []))
+      .toHaveLength(1);
 
     const overLimitTravelRequestId = await createApprovedTravelRequest(manager, requester);
     const response = await request(app)
@@ -1369,6 +1407,15 @@ describe("reimbursement workflow", () => {
 
     expect(pdfResponse.status).toBe(200);
     expect(pdfResponse.headers["content-type"]).toMatch(/application\/pdf/);
+
+    const voucherResponse = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/payment-voucher.pdf`)
+      .set("Authorization", "Bearer " + requesterToken);
+    expect(voucherResponse.status).toBe(200);
+    expect(voucherResponse.headers["content-type"]).toMatch(/application\/pdf/);
+    expect(voucherResponse.headers["content-disposition"]).toMatch(/payment-voucher-/);
+    expect((voucherResponse.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || []))
+      .toHaveLength(1);
 
     const templateResponse = await request(app)
       .get("/api/reimbursements/template/ter.pdf")

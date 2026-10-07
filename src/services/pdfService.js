@@ -450,7 +450,7 @@ function paymentRequestSignatureBlock(doc, { requester, supervisor, reviewedBy, 
       { width, align: "center" }
     );
 
-  const supervisorY = startY + 30;
+  const supervisorY = startY + 27;
   doc
     .font("Helvetica")
     .fontSize(7)
@@ -463,7 +463,7 @@ function paymentRequestSignatureBlock(doc, { requester, supervisor, reviewedBy, 
   drawSignature(supervisor.signature, x + width * 0.76 + 42, supervisorY - 1, width * 0.24 - 42, 14);
   doc.moveTo(x, supervisorY + 17).lineTo(x + width, supervisorY + 17).strokeColor("#222222").lineWidth(0.7).stroke();
 
-  const columnsY = supervisorY + 22;
+  const columnsY = supervisorY + 19;
   const approvals = [
     { title: "Prepared by:", ...requester },
     { title: "Reviewed by:", ...reviewedBy },
@@ -474,32 +474,32 @@ function paymentRequestSignatureBlock(doc, { requester, supervisor, reviewedBy, 
     if (index > 0) {
       doc
         .moveTo(left, columnsY)
-        .lineTo(left, columnsY + 65)
+        .lineTo(left, columnsY + 56)
         .strokeColor("#cccccc")
         .lineWidth(0.5)
         .stroke();
     }
     doc.font("Helvetica").fontSize(7).fillColor("#000000");
     doc.text(approval.title, left + 3, columnsY, { width: colWidth - 6 });
-    doc.text(`Name: ${dash(approval.name)}`, left + 3, columnsY + 10, {
+    doc.text(`Name: ${dash(approval.name)}`, left + 3, columnsY + 9, {
       width: colWidth - 6,
-      height: 10,
+      height: 9,
       ellipsis: true,
     });
-    doc.text(`Designation: ${dash(approval.designation)}`, left + 3, columnsY + 22, {
+    doc.text(`Designation: ${dash(approval.designation)}`, left + 3, columnsY + 19, {
       width: colWidth - 6,
-      height: 10,
+      height: 9,
       ellipsis: true,
     });
-    doc.text("Signature:", left + 3, columnsY + 36, { width: 42 });
-    drawSignature(approval.signature, left + 46, columnsY + 34, colWidth - 52, 14);
-    doc.text(`Date: ${dash(approval.date)}`, left + 3, columnsY + 51, {
+    doc.text("Signature:", left + 3, columnsY + 31, { width: 42 });
+    drawSignature(approval.signature, left + 46, columnsY + 29, colWidth - 52, 12);
+    doc.text(`Date: ${dash(approval.date)}`, left + 3, columnsY + 44, {
       width: colWidth - 6,
-      height: 10,
+      height: 9,
       ellipsis: true,
     });
   });
-  const acknowledgmentY = columnsY + 66;
+  const acknowledgmentY = columnsY + 57;
   doc
     .moveTo(x, acknowledgmentY)
     .lineTo(x + width, acknowledgmentY)
@@ -510,13 +510,13 @@ function paymentRequestSignatureBlock(doc, { requester, supervisor, reviewedBy, 
     .font("Helvetica")
     .fontSize(7)
     .text("Acknowledgement of receipt of payment:", x + 3, acknowledgmentY + 4, { width: colWidth - 6 })
-    .text("Name: ........................................", x + 3, acknowledgmentY + 15, { width: colWidth - 6 })
-    .text("Designation: ................................", x + 3, acknowledgmentY + 27, { width: colWidth - 6 })
-    .text("Signature: ..................................", x + 3, acknowledgmentY + 39, { width: colWidth - 6 })
+    .text("Name: ........................................", x + 3, acknowledgmentY + 13, { width: colWidth - 6 })
+    .text("Designation: ................................", x + 3, acknowledgmentY + 23, { width: colWidth - 6 })
+    .text("Signature: ..................................", x + 3, acknowledgmentY + 33, { width: colWidth - 6 })
     .text(`Employee (SA) Number: ${dash(employeeNumber)}`, x + colWidth + 3, acknowledgmentY + 15, {
       width: colWidth - 6,
     })
-    .text("Date: ........................................", x + colWidth + 3, acknowledgmentY + 39, {
+    .text("Date: ........................................", x + colWidth + 3, acknowledgmentY + 33, {
       width: colWidth - 6,
     });
   doc
@@ -525,7 +525,7 @@ function paymentRequestSignatureBlock(doc, { requester, supervisor, reviewedBy, 
     .strokeColor("#222222")
     .lineWidth(0.7)
     .stroke();
-  doc.y = acknowledgmentY + 60;
+  doc.y = acknowledgmentY + 52;
   doc.fillColor("#000000");
 }
 
@@ -790,191 +790,420 @@ function drawPaymentRequestPage(doc, report) {
     travel.purposeOfTrip ||
     report.lineItems?.[0]?.description ||
     "Travel expense reimbursement";
+  const pageWidth = doc.page.width;
+  const pageHeight = doc.page.height;
+  const width = pageWidth * 0.62;
+  const margin = (pageWidth - width) / 2;
+  const blueFill = "#d8f4f5";
 
-  drawBox(doc, 6, 6, PAGE.width - 12, PAGE.height - 12, { lineWidth: 1.2 });
-  const headerY = PAGE.margin + 6;
-  drawCareLogo(doc, { x: PAGE.margin, y: headerY, width: 48 });
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(10)
-    .text("CARE International in........KENYA........", PAGE.margin + 55, headerY + 8, {
-      width: contentWidth() - 180,
-      align: "center",
+  const cell = (x, y, w, h, value, options = {}) => {
+    drawBox(doc, x, y, w, h, {
+      fill: options.fill,
+      lineWidth: options.lineWidth || 0.6,
     });
+    doc
+      .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(options.size || 7)
+      .fillColor("#000000")
+      .text(String(value ?? ""), x + 3, y + 2, {
+        width: Math.max(1, w - 6),
+        height: Math.max(1, h - 4),
+        align: options.align || "left",
+        ellipsis: true,
+      });
+  };
+  const field = (x, y, w, label, value, options = {}) => {
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(options.size || 5.5)
+      .fillColor("#333333")
+      .text(label, x + 4, y + 3, { width: w * 0.43, height: 10, ellipsis: true });
+    doc
+      .font("Helvetica")
+      .fontSize(options.valueSize || 7)
+      .fillColor("#000000")
+      .text(dash(value), x + w * 0.43, y + 3, {
+        width: w * 0.55 - 4,
+        height: 10,
+        ellipsis: true,
+      });
+  };
+  const rule = (y) => {
+    doc.save().strokeColor("#333333").lineWidth(0.6)
+      .moveTo(margin, y).lineTo(margin + width, y).stroke().restore();
+  };
+
+  drawBox(doc, margin - 5, 7, width + 10, pageHeight - 14, { lineWidth: 1.1 });
+  doc
+    .font("Helvetica")
+    .fontSize(6)
+    .fillColor("#333333")
+    .text("Finance Manual - CARE Canada Country Offices\nForm 2.50.09", 22, 14, {
+      width: margin - 36,
+      height: 24,
+    })
+    .text("File: Chapter 2 Blank forms", margin + width + 12, 14, {
+      width: pageWidth - margin - width - 34,
+      height: 12,
+    })
+    .text("Effective Date: November 25, 2005", 22, pageHeight - 23, {
+      width: margin - 36,
+      height: 10,
+    })
+    .text("Form 2.50.09", margin + width + 12, pageHeight - 23, {
+      width: pageWidth - margin - width - 34,
+      height: 10,
+      align: "right",
+    });
+  drawCareLogo(doc, { x: margin + 5, y: 15, width: 39 });
   doc
     .font("Helvetica-Bold")
+    .fontSize(11)
+    .text("CARE International in Kenya", margin + 50, 17, {
+      width: width - 215,
+      align: "center",
+      height: 14,
+    })
     .fontSize(10)
+    .text("PAYMENT VOUCHER FORM", margin + 50, 33, {
+      width: width - 215,
+      align: "center",
+      height: 13,
+    })
+    .font("Helvetica")
+    .fontSize(7)
     .text(
-      "Payment Request (to be used for liquidation of advances / reimbursement of expenses etc.)",
-      PAGE.margin + 55,
-      headerY + 28,
-      { width: contentWidth() - 180, align: "center" }
+      "Payment request for liquidation of advances / reimbursement of expenses",
+      margin + 50,
+      47,
+      { width: width - 215, align: "center", height: 10 }
     );
   doc
     .font("Helvetica")
-    .fontSize(7)
-    .text(`Transaction No.: ${report._id}`, PAGE.width - PAGE.margin - 115, headerY + 48, {
-      width: 115,
-      align: "left",
+    .fontSize(6.5)
+    .text(`Transaction No.: ${report._id}`, pageWidth - margin - 145, 22, {
+      width: 140,
+      height: 10,
+      ellipsis: true,
     })
-    .text(`Date: ${formatDate(report.submittedAt)}`, PAGE.width - PAGE.margin - 115, headerY + 60, {
-      width: 115,
-      align: "left",
+    .text(`Date: ${formatDate(report.submittedAt)}`, pageWidth - margin - 145, 34, {
+      width: 140,
+      height: 10,
     });
-  doc.y = headerY + 78;
-  drawLine(doc, doc.y);
-  doc.y += 8;
+  rule(60);
 
-  fieldRow(doc, [
-    { label: "Name of the Payee:", value: submitter.name },
-    {
-      label: "Employee / Vendor No.:",
-      value: report.employeeNumber || submitter.employeeNumber,
-    },
-    { label: "Unit:", value: report.department || submitter.department },
-    { label: "Location:", value: report.baseLocation || submitter.office },
-  ]);
-
-  fieldRow(doc, [
-    { label: "Amount of Payment:", value: formatCurrencyLabel(total) },
-    { label: "Currency of Payment:", value: "KSHS" },
-    { label: "Position:", value: report.position || submitter.position },
-    { label: "Status:", value: String(report.status || "").toUpperCase() },
-  ]);
-
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(7)
-    .text("Fill in the appropriate box below", PAGE.margin, doc.y + 2, {
-      width: contentWidth(),
-      align: "center",
-    });
-  doc.moveDown(0.4);
-  fieldRow(doc, [
-    {
-      label: "Payment by Cheque No.",
-      value: "[ ]",
-    },
-    {
-      label: "Bank Transfer",
-      value: paymentDetails.paymentMethod === "bank_transfer" ? "[X]" : "[ ]",
-    },
-    {
-      label: "M-PESA",
-      value: paymentDetails.paymentMethod === "mpesa" ? "[X]" : "[ ]",
-    },
-  ]);
-  fieldRow(doc, [
-    { label: "Picked Up By:", value: "" },
-    { label: "Mailed To:", value: "" },
-    { label: "Mobile Number:", value: paymentDetails.mpesaNumber },
-  ]);
-  fieldRow(doc, [
-    { label: "Bank Name:", value: "" },
-    { label: "Bank Address:", value: "" },
-    { label: "Bank Account No.:", value: "" },
-  ]);
-  fieldRow(doc, [
-    { label: "SWIFT Code:", value: "" },
-    { label: "Beneficiary Name:", value: "" },
-    { label: "Sort Code:", value: "" },
-  ]);
-  fieldRow(doc, [
-    { label: "Intermediary Bank Address:", value: "" },
-    { label: "Intermediary Bank Account No.:", value: "" },
-    { label: "Intermediary SWIFT / ABA:", value: "" },
-  ]);
-  const purposeY = doc.y + 2;
-  drawBox(doc, PAGE.margin, purposeY, contentWidth(), 42, {
-    fill: "#d8f4f5",
-    lineWidth: 0.8,
+  const profileY = 64;
+  const profileW = width / 4;
+  [
+    ["Name of the Payee:", submitter.name],
+    ["Employee / Vendor No.:", report.employeeNumber || submitter.employeeNumber],
+    ["Unit:", report.department || submitter.department],
+    ["Location:", report.baseLocation || submitter.office],
+  ].forEach(([label, value], index) => {
+    field(margin + index * profileW, profileY, profileW, label, value);
   });
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8)
-    .text("PURPOSE", PAGE.margin + 8, purposeY + 7, { width: 65 });
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .text(purpose, PAGE.margin + 75, purposeY + 6, {
-      width: contentWidth() - 83,
-      height: 31,
+  rule(80);
+  const amountY = 82;
+  field(margin, amountY, width / 2, "Amount of Payment:", formatCurrencyLabel(total), { valueSize: 8 });
+  field(margin + width / 2, amountY, width / 2, "Currency of Payment:", "KSHS", { valueSize: 8 });
+  rule(98);
+
+  doc.font("Helvetica-Bold").fontSize(6.5).text("Select payment method:", margin + 4, 101);
+  const methodOptions = [
+    ["Cheque", paymentDetails.paymentMethod === "cheque"],
+    ["Bank Transfer", paymentDetails.paymentMethod === "bank_transfer"],
+    ["M-PESA", paymentDetails.paymentMethod === "mpesa"],
+  ];
+  methodOptions.forEach(([label, checked], index) => {
+    const x = margin + 150 + index * 105;
+    doc.font("Helvetica").fontSize(7).text(`${checkboxMark(checked)} ${label}`, x, 101, {
+      width: 100,
+      height: 10,
     });
-  doc.y = purposeY + 48;
+  });
+  field(margin, 113, width / 3, "Picked Up By:", "");
+  field(margin + width / 3, 113, width / 3, "Mailed To:", "");
+  field(margin + (width * 2) / 3, 113, width / 3, "Mobile Number:", paymentDetails.mpesaNumber);
+  field(margin, 126, width / 3, "Bank Name:", "");
+  field(margin + width / 3, 126, width / 3, "Bank Address:", "");
+  field(margin + (width * 2) / 3, 126, width / 3, "Bank Account No.:", "");
+  field(margin, 139, width / 3, "SWIFT Code:", "");
+  field(margin + width / 3, 139, width / 3, "Beneficiary Name:", "");
+  field(margin + (width * 2) / 3, 139, width / 3, "Sort Code:", "");
+  field(margin, 152, width / 3, "Intermediary Bank Address:", "");
+  field(margin + width / 3, 152, width / 3, "Intermediary Bank Account No.:", "");
+  field(margin + (width * 2) / 3, 152, width / 3, "Intermediary SWIFT / ABA:", "");
 
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(9)
-    .text("Back-up Document Details / Account Classification");
-  doc.moveDown(0.3);
+  cell(margin, 166, width, 30, "", { fill: blueFill });
+  doc.font("Helvetica-Bold").fontSize(7).text("PURPOSE", margin + 5, 169, { width: 55, height: 10 });
+  doc.font("Helvetica").fontSize(7.5).text(purpose, margin + 62, 169, {
+    width: width - 70,
+    height: 23,
+    ellipsis: true,
+  });
 
-  const lineItems = report.lineItems || [];
-  drawTable(
-    doc,
-    [
-      { header: "Date", width: 48 },
-      { header: "Description", width: 95 },
-      { header: "Amount", width: 48, align: "right" },
-      { header: "Invoice No.", width: 48 },
-      { header: "PeopleSoft Fund Account", width: 62 },
-      { header: "PeopleSoft Project ID", width: 70 },
-      { header: "PeopleSoft Activity ID", width: 62 },
-      { header: "PeopleSoft Department ID", width: 82 },
-    ],
-    lineItems.length
-      ? lineItems.map((item) => [
-          formatDate(item.expenseDate),
-          item.description || item.category,
-          formatCurrency(item.amount),
-          item.invoiceNumber,
-          project.fundCode,
-          project.projectId,
-          project.activityId,
-          project.departmentId,
-        ])
-      : [["—", "No line items", "0.00", "—", "—", "—", "—", "—"]],
-    { fontSize: 7.5, headerHeight: 40 }
+  drawPaymentRequestExpenseSummary(doc, report, project, {
+    x: margin,
+    y: 199,
+    width,
+    maxRows: 10,
+    rowHeight: 12,
+  });
+  const totalsY = 392;
+  const totalColWidth = width / 3;
+  [
+    ["Total of Expenses:", formatCurrencyLabel(total)],
+    ["Advance Outstanding:", "KSH 0.00"],
+    ["(Owed to CARE) / Owed to Employee:", formatCurrencyLabel(total)],
+  ].forEach(([label, value], index) => {
+    field(margin + index * totalColWidth, totalsY, totalColWidth, label, value, { valueSize: 7.5 });
+  });
+  rule(410);
+
+  const signature = (value, x, y, maxWidth, maxHeight = 12) => {
+    if (value?.startsWith("data:image/png;base64,")) {
+      const imageBytes = Buffer.from(value.slice("data:image/png;base64,".length), "base64");
+      doc.image(imageBytes, x, y, { fit: [maxWidth, maxHeight] });
+    } else if (value) {
+      doc.font("Helvetica-Oblique").fontSize(7).fillColor("#1646a0")
+        .text(value, x, y, { width: maxWidth, height: maxHeight, ellipsis: true });
+    } else {
+      doc.save().strokeColor("#555555").lineWidth(0.5).dash(1, { space: 2 })
+        .moveTo(x, y + maxHeight - 1).lineTo(x + maxWidth, y + maxHeight - 1).stroke().restore();
+    }
+  };
+  doc.font("Helvetica-Bold").fontSize(6.2).text(
+    "The payment requested above is reasonable and proper justification is attached to this payment request.",
+    margin,
+    413,
+    { width, align: "center", height: 9 }
   );
+  doc.font("Helvetica-Bold").fontSize(6.2).text(
+    "Staff approving the settlement confirm that CARE Kenya Policies and Procedures have been followed.",
+    margin,
+    423,
+    { width, align: "center", height: 9 }
+  );
+  field(margin, 435, width * 0.46, "Name of the Supervisor:", report.supervisorId?.name || "Not assigned");
+  field(margin + width * 0.46, 435, width * 0.30, "Designation:", report.supervisorId?.position);
+  doc.font("Helvetica-Bold").fontSize(6.5).text("Signature:", margin + width * 0.77, 438, { width: 40, height: 9 });
+  signature(report.supervisorSignedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 12);
+  rule(450);
 
-  fieldRow(doc, [
-    { label: "Total of Expenses:", value: formatCurrencyLabel(total) },
-    { label: "Advance Outstanding:", value: "KSH 0.00" },
+  const approvals = [
     {
-      label: "(Owed to CARE) / Owed to Employee:",
-      value: formatCurrencyLabel(total),
-    },
-  ]);
-
-  paymentRequestSignatureBlock(doc, {
-    supervisor: {
-      name: report.supervisorId?.name || "Not assigned",
-      designation: report.supervisorId?.position,
-      signature: report.supervisorSignedName,
-    },
-    requester: {
+      title: "Prepared by:",
       name: report.requesterSignedName || submitter.name,
       designation: report.position || submitter.position,
       signature: report.requesterSignature,
       date: formatDate(report.requesterSignedAt || report.submittedAt),
     },
-    reviewedBy: {
+    {
+      title: "Reviewed by:",
       name: report.financeAdminId?.name,
       designation: report.financeAdminId?.position,
       signature: report.financeSignedName,
       date: formatDate(report.financeApprovedAt),
     },
-    approvedBy: {
+    {
+      title: "Approved by:",
       name: report.lineManagerId?.name,
       designation: report.lineManagerId?.position,
       signature: report.lineManagerSignedName,
       date: formatDate(report.lineManagerApprovedAt),
     },
-    employeeNumber: report.employeeNumber || submitter.employeeNumber,
+  ];
+  const approvalY = 453;
+  const approvalWidth = width / approvals.length;
+  approvals.forEach((approval, index) => {
+    const x = margin + index * approvalWidth;
+    if (index > 0) {
+      doc.moveTo(x, approvalY).lineTo(x, 498).strokeColor("#cccccc").lineWidth(0.5).stroke();
+    }
+    doc.font("Helvetica-Bold").fontSize(6.5).text(approval.title, x + 4, approvalY, { width: approvalWidth - 8, height: 9 });
+    doc.font("Helvetica").fontSize(6).text(`Name: ${dash(approval.name)}`, x + 4, approvalY + 9, {
+      width: approvalWidth - 8,
+      height: 8,
+      ellipsis: true,
+    });
+    doc.text(`Designation: ${dash(approval.designation)}`, x + 4, approvalY + 18, {
+      width: approvalWidth - 8,
+      height: 8,
+      ellipsis: true,
+    });
+    doc.font("Helvetica-Bold").text("Signature:", x + 4, approvalY + 28, { width: 38, height: 8 });
+    signature(approval.signature, x + 44, approvalY + 27, approvalWidth - 52, 10);
+    doc.font("Helvetica").fontSize(6).text(`Date: ${dash(approval.date)}`, x + 4, approvalY + 39, {
+      width: approvalWidth - 8,
+      height: 8,
+      ellipsis: true,
+    });
+  });
+  rule(500);
+  doc.font("Helvetica-Bold").fontSize(6.2).text(
+    "Acknowledgement of receipt of payment:",
+    margin + 4,
+    504,
+    { width: approvalWidth, height: 8 }
+  );
+  doc.font("Helvetica").fontSize(6).text(
+    "Name: ................................................  Designation: ................................................  Signature: ................................................",
+    margin + 4,
+    514,
+    { width: approvalWidth - 8, height: 22, ellipsis: true }
+  );
+  doc.font("Helvetica").fontSize(6).text(
+    `Employee (SA) Number: ${dash(report.employeeNumber || submitter.employeeNumber)}    Date: ........................................`,
+    margin + approvalWidth + 4,
+    514,
+    { width: approvalWidth * 2 - 8, height: 10, ellipsis: true }
+  );
+  rule(539);
+  doc.y = Math.min(540, pageHeight - margin);
+}
+
+function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
+  const lineItems = report.lineItems || [];
+  const days = buildTerDayBuckets(lineItems);
+  const tableX = layout.x;
+  const baseWidths = [48, 120, 61, 68, 90, 98, 84, 120];
+  const baseTotal = baseWidths.reduce((sum, value) => sum + value, 0);
+  const widths = baseWidths.map((value) => value * (layout.width / baseTotal));
+  const labels = [
+    "Date",
+    "Description",
+    "Amount",
+    "Invoice No.",
+    "PeopleSoft Fund Account",
+    "PeopleSoft Project ID",
+    "PeopleSoft Activity ID",
+    "PeopleSoft Department ID",
+  ];
+  const tableWidth = widths.reduce((sum, width) => sum + width, 0);
+  const daysWithItems = days.map((day) => {
+    const dayKey = day.date ? day.date.toISOString().slice(0, 10) : null;
+    const items = lineItems.filter((item) => {
+      if (!item.expenseDate) return !dayKey;
+      return new Date(item.expenseDate).toISOString().slice(0, 10) === dayKey;
+    });
+    return {
+      ...day,
+      items,
+      total: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    };
+  });
+  const compact = daysWithItems.length > 5;
+  const headerHeight = 27;
+  const rowHeight = layout.rowHeight;
+  const fontSize = compact ? 5.8 : 6.2;
+  let y = layout.y;
+
+  const drawCell = (x, top, width, height, value, options = {}) => {
+    drawBox(doc, x, top, width, height, {
+      fill: options.fill,
+      lineWidth: 0.6,
+    });
+    doc
+      .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(options.fontSize || fontSize)
+      .fillColor("#000000")
+      .text(String(value || ""), x + 2, top + 2, {
+        width: width - 4,
+        height: height - 3,
+        align: options.align || "left",
+        ellipsis: true,
+      });
+  };
+
+  const firstGroupWidth = widths.slice(0, 4).reduce((sum, width) => sum + width, 0);
+  drawCell(tableX, y, firstGroupWidth, 13, "Back-up Document Details", {
+    bold: true,
+    fontSize: 6.5,
+    fill: "#eeeeee",
+  });
+  drawCell(tableX + firstGroupWidth, y, tableWidth - firstGroupWidth, 13, "Account Classification", {
+    bold: true,
+    fontSize: 6.5,
+    fill: "#eeeeee",
+    align: "center",
+  });
+  y += 13;
+
+  let x = tableX;
+  labels.forEach((label, index) => {
+    drawCell(x, y, widths[index], headerHeight, label, {
+      bold: true,
+      fill: "#eeeeee",
+      align: "center",
+      fontSize: compact ? 5 : 6,
+    });
+    x += widths[index];
+  });
+  y += headerHeight;
+
+  const maxVisibleDays = layout.maxRows;
+  const hasAdditionalDays = daysWithItems.length > maxVisibleDays;
+  const visibleDays = hasAdditionalDays
+    ? daysWithItems.slice(0, maxVisibleDays - 1)
+    : daysWithItems;
+  const rows = visibleDays.length
+    ? visibleDays.map((day) => {
+        const descriptions = [...new Set(day.items.map((item) => item.description || item.category).filter(Boolean))];
+        const invoiceNumbers = [...new Set(day.items.map((item) => item.invoiceNumber).filter(Boolean))];
+        return [
+          day.date ? formatDate(day.date) : "—",
+          descriptions.join("; ") || [...new Set(Object.keys(day.amounts))].join("; "),
+          formatCurrency(day.total),
+          invoiceNumbers.length > 1 ? `${invoiceNumbers.length} invoices` : invoiceNumbers[0] || "",
+          project.fundCode,
+          project.projectId,
+          project.activityId,
+          project.departmentId,
+        ];
+      })
+    : [["—", "No line items", "0.00", "—", project.fundCode, project.projectId, project.activityId, project.departmentId]];
+
+  if (hasAdditionalDays) {
+    const remainingDays = daysWithItems.slice(maxVisibleDays - 1);
+    rows.push([
+      "See TER",
+      `Additional daily totals (${remainingDays.length} days)`,
+      formatCurrency(remainingDays.reduce((sum, day) => sum + day.total, 0)),
+      "See TER",
+      project.fundCode,
+      project.projectId,
+      project.activityId,
+      project.departmentId,
+    ]);
+  }
+
+  while (rows.length < layout.maxRows) {
+    rows.push(["", "", "", "", "", "", "", ""]);
+  }
+
+  rows.forEach((row) => {
+    x = tableX;
+    row.forEach((value, index) => {
+      drawCell(x, y, widths[index], rowHeight, value, {
+        align: index === 2 ? "right" : "left",
+      });
+      x += widths[index];
+    });
+    y += rowHeight;
   });
 
-  if (report.decision?.comment) {
-    labeledBlock(doc, "Decision Comment:", report.decision.comment);
-  }
+  x = tableX;
+  const dailyTotal = daysWithItems.reduce((sum, day) => sum + day.total, 0);
+  ["TOTAL BY DATE", "", formatCurrency(dailyTotal), "", "", "", "", ""].forEach((value, index) => {
+    drawCell(x, y, widths[index], 15, value, {
+      bold: true,
+      fill: "#cccccc",
+      align: index === 2 ? "right" : "left",
+      fontSize: 6,
+    });
+    x += widths[index];
+  });
+  doc.y = y + 15;
 }
 
 function classifyExpenseDescription(description = "") {
@@ -1384,7 +1613,16 @@ function buildReimbursementPdf(res, report) {
       doc.addPage({ size: "A4", layout: "portrait", margin: PAGE.margin });
       drawTravelRequestPdfPage(doc, report.travelRequest);
     }
-  });
+  }, { layout: "landscape" });
+}
+
+function buildPaymentVoucherPdf(res, report) {
+  streamPdf(
+    res,
+    `payment-voucher-${report._id}.pdf`,
+    (doc) => drawPaymentRequestPage(doc, report),
+    { layout: "landscape" }
+  );
 }
 
 function buildEmptyTravelExpenseReportPdf(res) {
@@ -1402,5 +1640,6 @@ module.exports = {
   buildTravelRequestPdf,
   buildTravelRequestsPdf,
   buildReimbursementPdf,
+  buildPaymentVoucherPdf,
   buildEmptyTravelExpenseReportPdf,
 };

@@ -12,7 +12,11 @@ const {
 } = require("../services/attachmentStorageService");
 const { createAuditLog } = require("../services/auditLogService");
 const { notifyReimbursementUser } = require("../services/notificationService");
-const { buildReimbursementPdf, buildEmptyTravelExpenseReportPdf } = require("../services/pdfService");
+const {
+  buildReimbursementPdf,
+  buildPaymentVoucherPdf,
+  buildEmptyTravelExpenseReportPdf,
+} = require("../services/pdfService");
 const { getTravelRequestPopulateQuery } = require("../services/travelRequestService");
 const {
   ensureUserCanClaimReimbursement,
@@ -804,6 +808,19 @@ async function downloadReimbursementPdf(req, res) {
   buildReimbursementPdf(res, response);
 }
 
+async function downloadPaymentVoucherPdf(req, res) {
+  const report = await populateReport(req.params.id);
+
+  if (!report) {
+    throw new HttpError(404, "Reimbursement report not found");
+  }
+
+  await ensureCanAccessReport(req.user, report);
+
+  const [response] = await attachLineItems([report]);
+  buildPaymentVoucherPdf(res, response);
+}
+
 async function uploadReimbursementAttachment(req, res) {
   const report = await ReimbursementReport.findById(req.params.id);
   if (!report) throw new HttpError(404, "Reimbursement report not found");
@@ -889,6 +906,7 @@ module.exports = {
   updateReimbursement,
   updateReimbursementStatus,
   downloadReimbursementPdf,
+  downloadPaymentVoucherPdf,
   uploadReimbursementAttachment,
   downloadReimbursementAttachment,
   getExpenseCategories,

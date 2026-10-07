@@ -15,12 +15,12 @@ async function getMe(req, res) {
   const user = await User.findById(req.user.id)
     .populate("managerId", "name email role isActive")
     .populate("alternateApproverIds", "name email role isActive department")
-    .select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft");
+    .select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft +savedSignature");
   return res.json(user);
 }
 
 async function updateMe(req, res) {
-  const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "managerName", "managerEmail", "alternateManagers"];
+  const allowedFields = ["name", "email", "employeeNumber", "position", "office", "department", "managerName", "managerEmail", "alternateManagers", "savedSignature"];
   const updates = {};
 
   allowedFields.forEach((field) => {
@@ -29,8 +29,17 @@ async function updateMe(req, res) {
     }
   });
 
-  if (!updates.name) {
+  if (updates.name !== undefined && !updates.name) {
     throw new HttpError(400, "Name is required");
+  }
+  if (
+    updates.savedSignature !== undefined &&
+    updates.savedSignature !== null &&
+    (typeof updates.savedSignature !== "string" ||
+      updates.savedSignature.length > 1500000 ||
+      !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(updates.savedSignature))
+  ) {
+    throw new HttpError(400, "Saved signature must be a valid PNG image");
   }
   if (updates.managerEmail) updates.managerEmail = updates.managerEmail.toLowerCase();
   if (updates.alternateManagers !== undefined) {
@@ -59,7 +68,7 @@ async function updateMe(req, res) {
   const user = await User.findByIdAndUpdate(req.user.id, { $set: updates }, {
     new: true,
     runValidators: true,
-  }).select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft");
+  }).select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft +savedSignature");
 
   return res.json(user);
 }
