@@ -1057,10 +1057,10 @@ function drawPaymentRequestPage(doc, report) {
     423,
     { width, align: "center", height: 9 }
   );
-  field(margin, 435, width * 0.46, "Name of the Supervisor:", report.supervisorId?.name || "Not assigned");
-  field(margin + width * 0.46, 435, width * 0.30, "Designation:", report.supervisorId?.position);
+  field(margin, 435, width * 0.46, "Line Manager (acknowledgement):", report.lineManagerId?.name || "Not assigned");
+  field(margin + width * 0.46, 435, width * 0.30, "Designation:", report.lineManagerId?.position);
   doc.font("Helvetica-Bold").fontSize(7.5).text("Signature:", margin + width * 0.77, 438, { width: 40, height: 9 });
-  signature(report.supervisorSignature || report.supervisorSignedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 22);
+  signature(report.lineManagerAcknowledgementSignature || report.lineManagerAcknowledgedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 22);
   rule(458);
 
   const approvals = [
@@ -1080,10 +1080,10 @@ function drawPaymentRequestPage(doc, report) {
     },
     {
       title: "Approved by:",
-      name: report.lineManagerId?.name,
-      designation: report.lineManagerId?.position,
-      signature: report.lineManagerSignature || report.lineManagerSignedName,
-      date: formatDate(report.lineManagerApprovedAt),
+      name: report.selected_approver_id?.name,
+      designation: report.selected_approver_id?.position,
+      signature: report.budgetHolderSignature || report.budgetHolderSignedName,
+      date: formatDate(report.budgetHolderApprovedAt),
     },
   ];
   const approvalY = 461;

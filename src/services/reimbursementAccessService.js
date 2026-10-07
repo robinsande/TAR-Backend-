@@ -24,11 +24,15 @@ async function buildReimbursementTeamScope(user) {
   if (user.roles?.includes("finance_admin")) {
     return {
       $or: [
-        { financeAdminId: user.id },
-        { financeCcAdminId: user.id },
-        { financeAdminId: null },
+        {
+          $or: [{ financeAdminId: user.id }, { financeAdminId: null, financeCcAdminId: null }],
+          status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW", "FINANCE_APPROVED", "FINANCE_DECLINED", "PAYMENT_PROCESSING", "COMPLETED"] },
+        },
+        {
+          financeCcAdminId: user.id,
+          status: { $in: ["PAYMENT_PROCESSING", "COMPLETED"] },
+        },
       ],
-      status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW", "FINANCE_APPROVED", "FINANCE_DECLINED", "PAYMENT_PROCESSING", "COMPLETED"] },
     };
   }
   if (!["admin", "approver_budget_holder"].includes(user.role)) {
@@ -54,29 +58,44 @@ async function canAccessReport(user, report) {
 
   const ownerId = idToString(report.submittedBy);
   const approverId = idToString(report.selected_approver_id);
+  const lineManagerId = idToString(report.lineManagerId);
+  const lineManagerCanReviewDocuments = [
+    "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
+    "SUBMITTED_TO_LINE_MANAGER",
+    "LINE_MANAGER_REVIEW",
+    "SUBMITTED_TO_FINANCE",
+    "FINANCE_REVIEW",
+    "FINANCE_APPROVED",
+    "FINANCE_DECLINED",
+    "PAYMENT_PROCESSING",
+    "COMPLETED",
+  ].includes(report.status);
 
   if (
     ownerId === user.id ||
     approverId === user.id ||
     idToString(report.supervisorId) === user.id ||
-    idToString(report.lineManagerId) === user.id
+    (lineManagerId === user.id && lineManagerCanReviewDocuments)
   ) {
     return true;
   }
 
   if (user.roles?.includes("finance_admin")) {
-    return (
-      (!report.financeAdminId ||
-        idToString(report.financeAdminId) === user.id ||
-        idToString(report.financeCcAdminId) === user.id) && [
+    const financeStatuses = [
       "SUBMITTED_TO_FINANCE",
       "FINANCE_REVIEW",
       "FINANCE_APPROVED",
       "FINANCE_DECLINED",
       "PAYMENT_PROCESSING",
       "COMPLETED",
-      ].includes(report.status)
-    );
+    ];
+    const assignedFinance = report.financeAdminId
+      ? idToString(report.financeAdminId) === user.id && financeStatuses.includes(report.status)
+      : !report.financeCcAdminId && financeStatuses.includes(report.status);
+    const copiedFinance =
+      idToString(report.financeCcAdminId) === user.id &&
+      ["PAYMENT_PROCESSING", "COMPLETED"].includes(report.status);
+    return assignedFinance || copiedFinance;
   }
 
   if (["admin", "approver_budget_holder"].includes(user.role)) {
@@ -86,6 +105,18 @@ async function canAccessReport(user, report) {
   }
 
   return false;
+}
+
+function canViewMergedReimbursementPackage(user, report) {
+  const userId = user.id;
+  return (
+    idToString(report.submittedBy) === userId ||
+    idToString(report.selected_approver_id) === userId ||
+    idToString(report.financeAdminId) === userId ||
+    idToString(report.financeCcAdminId) === userId ||
+    ["superadmin", "super_superadmin"].includes(user.role) ||
+    user.roles?.includes("auditor")
+  );
 }
 
 async function ensureCanAccessReport(user, report) {
@@ -118,4 +149,5 @@ module.exports = {
   ensureCanAccessReport,
   ensureReportOwner,
   ensureReportApprover,
+  canViewMergedReimbursementPackage,
 };

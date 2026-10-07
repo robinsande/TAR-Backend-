@@ -37,6 +37,7 @@ const {
   buildReimbursementTeamScope,
   ensureCanAccessReport,
   ensureReportOwner,
+  canViewMergedReimbursementPackage,
 } = require("../services/reimbursementAccessService");
 const {
   buildReimbursementFilters,
@@ -69,8 +70,24 @@ const APPROVAL_STAGES = {
     level: "SUPERVISOR",
     assignedField: "supervisorId",
     approverRole: "supervisor",
-    approved: "SUBMITTED_TO_LINE_MANAGER",
+    approved: "SUBMITTED_TO_BUDGET_HOLDER",
     declined: "SUPERVISOR_DECLINED",
+  },
+  SUBMITTED_TO_BUDGET_HOLDER: {
+    review: "BUDGET_HOLDER_REVIEW",
+    level: "BUDGET_HOLDER",
+    assignedField: "selected_approver_id",
+    approverRole: "approver_budget_holder",
+    approved: "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
+    declined: "BUDGET_HOLDER_DECLINED",
+  },
+  BUDGET_HOLDER_REVIEW: {
+    review: "BUDGET_HOLDER_REVIEW",
+    level: "BUDGET_HOLDER",
+    assignedField: "selected_approver_id",
+    approverRole: "approver_budget_holder",
+    approved: "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
+    declined: "BUDGET_HOLDER_DECLINED",
   },
   SUBMITTED_TO_LINE_MANAGER: {
     review: "LINE_MANAGER_REVIEW",
@@ -164,17 +181,47 @@ function assertStandardExpenseRates(lineItems) {
   }
 }
 
-async function resolveOptionalSupervisor(supervisorId, submitter, lineManager, passengers) {
+async function resolveOptionalSupervisor(supervisorId, submitter, budgetHolder, passengers, lineManager) {
   if (!supervisorId) return null;
 
   const supervisor = await getEligibleSupervisorById(supervisorId, {
     excludeUserIds: [submitter._id],
   });
-  if (String(supervisor._id) === String(lineManager._id)) {
+  if ([budgetHolder._id, lineManager?._id].some((id) => id && String(supervisor._id) === String(id))) {
     throw new HttpError(400, "The Supervisor must be different from the approved TAR Line Manager");
   }
   ensureApproverNotOnRequest(supervisor._id, submitter._id, passengers);
   return supervisor;
+}
+
+async function resolveTravelApprovers(travelRequest, submitter, passengers) {
+  const lineManagerId =
+    travelRequest.selected_approver_id?._id || travelRequest.selected_approver_id;
+  const lineManager = await User.findOne({
+    _id: lineManagerId,
+    role: { $in: ["admin", "approver_budget_holder"] },
+    isActive: true,
+  });
+  if (!lineManager) {
+    throw new HttpError(400, "The approved TAR does not have an active Line Manager assigned");
+  }
+
+  const selectedBudgetHolder = travelRequest.selected_budget_holder_id;
+  const budgetHolderUserId = selectedBudgetHolder?.user?._id || selectedBudgetHolder?.user;
+  let budgetHolder = budgetHolderUserId
+    ? await User.findOne({
+        _id: budgetHolderUserId,
+        role: { $in: ["admin", "approver_budget_holder"] },
+        isActive: true,
+      })
+    : null;
+  if (budgetHolderUserId && !budgetHolder) {
+    throw new HttpError(400, "The approved TAR Budget Holder must be an active authorized user");
+  }
+  if (!budgetHolder) budgetHolder = lineManager;
+
+  ensureApproverNotOnRequest(budgetHolder._id, submitter._id, passengers);
+  return { budgetHolder, lineManager };
 }
 
 async function resolveOptionalFinanceCcAdmin(financeCcAdminId, financeAdmin) {
@@ -216,11 +263,21 @@ function visibleAttachments(report, user) {
   if (userHasRole(user, "finance_admin")) {
     return (report.attachments || []).filter((attachment) => attachment.category === "financial");
   }
-  if (String(report.lineManagerId?._id || report.lineManagerId || "") === user.id) {
-    return (report.attachments || []).filter((attachment) => attachment.category !== "supervisor");
+  const lineManagerId = String(report.lineManagerId?._id || report.lineManagerId || "");
+  const budgetHolderId = String(report.selected_approver_id?._id || report.selected_approver_id || "");
+  if (lineManagerId === user.id) {
+    return report.attachments || [];
+  }
+  if (budgetHolderId === user.id) {
+    return lineManagerId === user.id
+      ? report.attachments || []
+      : (report.attachments || []).filter((attachment) => attachment.category === "financial");
   }
   if (user.role === "admin") {
-    return (report.attachments || []).filter((attachment) => attachment.category !== "supervisor");
+    return [];
+  }
+  if (user.role === "approver_budget_holder") {
+    return [];
   }
   if (String(report.supervisorId?._id || report.supervisorId || "") === user.id) {
     return (report.attachments || []).filter((attachment) => attachment.category !== "line_manager");
@@ -258,7 +315,9 @@ async function createReimbursement(req, res) {
     throw new HttpError(404, "User not found");
   }
 
-  const travelRequest = await TravelRequest.findById(req.body.travelRequestId);
+  const travelRequest = await getTravelRequestPopulateQuery(
+    TravelRequest.findById(req.body.travelRequestId)
+  );
 
   if (!travelRequest) {
     throw new HttpError(404, "Travel request not found");
@@ -270,21 +329,17 @@ async function createReimbursement(req, res) {
 
   ensureUserCanClaimReimbursement(travelRequest, submitter._id);
 
-  const lineManagerId = travelRequest.selected_approver_id;
-  const lineManager = await User.findOne({
-    _id: lineManagerId,
-    role: { $in: ["admin", "approver_budget_holder"] },
-    isActive: true,
-  });
-  if (!lineManager) {
-    throw new HttpError(400, "The approved TAR does not have an active Line Manager assigned");
-  }
-  ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
+  const { budgetHolder, lineManager } = await resolveTravelApprovers(
+    travelRequest,
+    submitter,
+    travelRequest.passengers
+  );
   const supervisor = await resolveOptionalSupervisor(
     req.body.supervisorId,
     submitter,
-    lineManager,
-    travelRequest.passengers
+    budgetHolder,
+    travelRequest.passengers,
+    lineManager
   );
 
   const financeAdmin = await User.findOne({
@@ -324,6 +379,7 @@ async function createReimbursement(req, res) {
         },
         submitter._id,
         supervisor?._id || null,
+        budgetHolder._id,
         lineManager._id,
         submitter
       )
@@ -356,7 +412,7 @@ async function createReimbursement(req, res) {
   });
 
   const response = await buildReimbursementResponse(report._id);
-  await notifyReimbursementUser(supervisor || lineManager, "reimbursement_submitted", response);
+  await notifyReimbursementUser(supervisor || budgetHolder, "reimbursement_submitted", response);
 
   return res.status(201).json(response);
 }
@@ -372,21 +428,18 @@ async function previewReimbursement(req, res) {
   }
   ensureUserCanClaimReimbursement(travelRequest, submitter._id);
 
-  const lineManager = travelRequest.selected_approver_id;
-  if (
-    !lineManager ||
-    !lineManager.isActive ||
-    !["admin", "approver_budget_holder"].includes(lineManager.role)
-  ) {
-    throw new HttpError(400, "The selected approved TAR does not have an active Line Manager");
-  }
-  ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
+  const { budgetHolder, lineManager } = await resolveTravelApprovers(
+    travelRequest,
+    submitter,
+    travelRequest.passengers
+  );
   const [supervisor, financeAdmin, financeCcAdmin] = await Promise.all([
     resolveOptionalSupervisor(
       req.body.supervisorId,
       submitter,
-      lineManager,
-      travelRequest.passengers
+      budgetHolder,
+      travelRequest.passengers,
+      lineManager
     ),
     User.findOne({
       _id: req.body.financeAdminId,
@@ -415,7 +468,7 @@ async function previewReimbursement(req, res) {
     _id: "preview",
     travelRequest,
     submittedBy: submitter,
-    selected_approver_id: lineManager,
+    selected_approver_id: budgetHolder,
     supervisorId: supervisor,
     lineManagerId: lineManager,
     financeAdminId: financeAdmin,
@@ -479,8 +532,18 @@ async function getPendingApprovals(req, res) {
   }
   if (hasLineManagerRole(req.user)) {
     stages.push({
+      selected_approver_id: req.user.id,
+      status: { $in: ["SUBMITTED_TO_BUDGET_HOLDER", "BUDGET_HOLDER_REVIEW"] },
+    });
+    stages.push({
       lineManagerId: req.user.id,
-      status: { $in: ["SUBMITTED_TO_LINE_MANAGER", "LINE_MANAGER_REVIEW"] },
+      status: {
+        $in: [
+          "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
+          "SUBMITTED_TO_LINE_MANAGER",
+          "LINE_MANAGER_REVIEW",
+        ],
+      },
     });
   }
   if (!stages.length) {
@@ -519,7 +582,6 @@ async function getReimbursementById(req, res) {
   }
 
   await ensureCanAccessReport(req.user, report);
-
   const [response] = await attachLineItems([report]);
   response.attachments = visibleAttachments(response, req.user);
   return res.json(response);
@@ -534,11 +596,13 @@ async function updateReimbursement(req, res) {
 
   ensureReportOwner(req.user, report);
 
-  if (!["pending", "DRAFT", "rejected", "SUPERVISOR_DECLINED", "LINE_MANAGER_DECLINED", "FINANCE_DECLINED"].includes(report.status)) {
+  if (!["pending", "DRAFT", "rejected", "SUPERVISOR_DECLINED", "BUDGET_HOLDER_DECLINED", "LINE_MANAGER_DECLINED", "FINANCE_DECLINED"].includes(report.status)) {
     throw new HttpError(400, "Only declined reimbursement reports can be edited and resubmitted");
   }
 
-  const travelRequest = await TravelRequest.findById(req.body.travelRequestId);
+  const travelRequest = await getTravelRequestPopulateQuery(
+    TravelRequest.findById(req.body.travelRequestId)
+  );
   if (!travelRequest || travelRequest.status !== "approved") {
     throw new HttpError(409, "Select an approved TAR before resubmission");
   }
@@ -553,20 +617,17 @@ async function updateReimbursement(req, res) {
   ) {
     throw new HttpError(409, "A reimbursement already exists for you on the selected TAR");
   }
-  const lineManager = await User.findOne({
-    _id: travelRequest.selected_approver_id,
-    role: { $in: ["admin", "approver_budget_holder"] },
-    isActive: true,
-  });
-  if (!lineManager) {
-    throw new HttpError(409, "The approved TAR does not have an active Line Manager assigned");
-  }
-  ensureApproverNotOnRequest(lineManager._id, req.currentUser._id, travelRequest.passengers);
+  const { budgetHolder, lineManager } = await resolveTravelApprovers(
+    travelRequest,
+    req.currentUser,
+    travelRequest.passengers
+  );
   const supervisor = await resolveOptionalSupervisor(
     req.body.supervisorId,
     req.currentUser,
-    lineManager,
-    travelRequest.passengers
+    budgetHolder,
+    travelRequest.passengers,
+    lineManager
   );
   const financeAdmin = await User.findOne({
     _id: req.body.financeAdminId,
@@ -602,7 +663,7 @@ async function updateReimbursement(req, res) {
 
   applyReimbursementResubmission(report, req.body, supervisor?._id || null);
   report.lineManagerId = lineManager._id;
-  report.selected_approver_id = lineManager._id;
+  report.selected_approver_id = budgetHolder._id;
   report.travelRequest = travelRequest._id;
   report.financeAdminId = financeAdmin._id;
   report.financeCcAdminId = financeCcAdmin?._id || null;
@@ -616,6 +677,21 @@ async function updateReimbursement(req, res) {
   report.supervisorSignature = null;
   report.lineManagerSignedName = null;
   report.lineManagerSignature = null;
+  report.budgetHolderSignedName = null;
+  report.budgetHolderSignature = null;
+  report.budgetHolderApprovedBy = null;
+  report.budgetHolderApprovedAt = null;
+  report.budgetHolderDeclinedBy = null;
+  report.budgetHolderDeclinedAt = null;
+  report.budgetHolderDeclineReason = null;
+  report.lineManagerAcknowledgedBy = null;
+  report.lineManagerAcknowledgedAt = null;
+  report.lineManagerAcknowledgedName = null;
+  report.lineManagerAcknowledgementSignature = null;
+  report.financeCcAcknowledgedBy = null;
+  report.financeCcAcknowledgedAt = null;
+  report.financeCcAcknowledgedName = null;
+  report.financeCcAcknowledgementSignature = null;
   report.financeSignedName = null;
   report.financeSignature = null;
   for (const field of [
@@ -637,10 +713,10 @@ async function updateReimbursement(req, res) {
   ]) {
     report[field] = null;
   }
-  report.status = supervisor ? "SUBMITTED_TO_SUPERVISOR" : "SUBMITTED_TO_LINE_MANAGER";
+  report.status = supervisor ? "SUBMITTED_TO_SUPERVISOR" : "SUBMITTED_TO_BUDGET_HOLDER";
   report.approvalHistory.push({
     approvalLevel: "SYSTEM",
-    action: supervisor ? "RESUBMITTED_TO_SUPERVISOR" : "RESUBMITTED_TO_LINE_MANAGER",
+    action: supervisor ? "RESUBMITTED_TO_SUPERVISOR" : "RESUBMITTED_TO_BUDGET_HOLDER",
     performedBy: req.user.id,
     performedByRole: req.currentUser?.role || req.user.role,
     occurredAt: new Date(),
@@ -660,7 +736,7 @@ async function updateReimbursement(req, res) {
   });
 
   const response = await buildReimbursementResponse(report._id);
-  await notifyReimbursementUser(supervisor || lineManager, "reimbursement_resubmitted", response);
+  await notifyReimbursementUser(supervisor || budgetHolder, "reimbursement_resubmitted", response);
 
   return res.json(response);
 }
@@ -675,6 +751,64 @@ async function updateReimbursementStatus(req, res) {
 
   if (!report) {
     throw new HttpError(404, "Reimbursement report not found");
+  }
+
+  if (status === "acknowledged") {
+    const signature = String(req.body.signature || "").trim();
+    if (!signature) throw new HttpError(400, "A signature is required to acknowledge this reimbursement");
+    const userId = String(req.user.id);
+    const isLineManagerCopy =
+      String(report.lineManagerId || "") === userId &&
+      String(report.selected_approver_id || "") !== userId &&
+      hasLineManagerRole(req.user) &&
+      report.status === "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT";
+    const isFinanceCopy =
+      String(report.financeCcAdminId || "") === userId &&
+      userHasRole(req.user, "finance_admin") &&
+      ["PAYMENT_PROCESSING", "COMPLETED"].includes(report.status);
+    if (!isLineManagerCopy && !isFinanceCopy) {
+      throw new HttpError(403, "You are not an assigned copied recipient for this reimbursement");
+    }
+    const acknowledgementPrefix = isLineManagerCopy ? "lineManager" : "financeCc";
+    if (report[`${acknowledgementPrefix}AcknowledgedAt`]) {
+      throw new HttpError(409, "You have already acknowledged this reimbursement");
+    }
+    report[`${acknowledgementPrefix}AcknowledgedBy`] = req.user.id;
+    report[`${acknowledgementPrefix}AcknowledgedAt`] = new Date();
+    report[`${acknowledgementPrefix}AcknowledgedName`] =
+      req.currentUser?.name || req.user.name;
+    report[`${acknowledgementPrefix}AcknowledgementSignature`] = signature;
+    if (isLineManagerCopy) {
+      report.status = "SUBMITTED_TO_FINANCE";
+      addApprovalHistory(report, req, {
+        level: "SYSTEM",
+        action: "SUBMITTED_TO_FINANCE",
+        resultingStatus: "SUBMITTED_TO_FINANCE",
+      });
+    }
+    addApprovalHistory(report, req, {
+      level: isLineManagerCopy ? "LINE_MANAGER" : "FINANCE_ADMIN",
+      action: "ACKNOWLEDGED",
+      comments: comment || null,
+      resultingStatus: report.status,
+    });
+    await report.save();
+    await createAuditLog({
+      action: "reimbursement_acknowledged",
+      performedBy: req.user.id,
+      targetReimbursement: report._id,
+      metadata: { copiedRole: isLineManagerCopy ? "line_manager" : "finance_admin" },
+    });
+    const response = await buildReimbursementResponse(report._id);
+    response.attachments = visibleAttachments(response, req.user);
+    if (isLineManagerCopy) {
+      const financeStage = APPROVAL_STAGES.SUBMITTED_TO_FINANCE;
+      for (const recipient of await stageRecipients(financeStage, response)) {
+        await notifyReimbursementUser(recipient, "reimbursement_submitted", response);
+      }
+      await notifyReimbursementUser(response.submittedBy, "reimbursement_approved", response);
+    }
+    return res.json(response);
   }
 
   if (status === "completed") {
@@ -701,7 +835,7 @@ async function updateReimbursementStatus(req, res) {
           userHasRole(req.user, stage.approverRole))
       : userHasRole(req.user, stage.approverRole);
     const hasRequiredRole =
-      stage.approverRole === "line_manager"
+      ["line_manager", "approver_budget_holder"].includes(stage.approverRole)
         ? hasLineManagerRole(req.user)
         : userHasRole(req.user, stage.approverRole);
     if (!isAssignedApprover || !hasRequiredRole) {
@@ -747,6 +881,17 @@ async function updateReimbursementStatus(req, res) {
           report.lineManagerApprovedBy = req.user.id;
           report.lineManagerApprovedAt = new Date();
         }
+        if (stage.level === "BUDGET_HOLDER") {
+          report.budgetHolderSignedName = req.currentUser?.name || req.user.name;
+          report.budgetHolderSignature = req.body.signature || report.budgetHolderSignedName;
+          report.budgetHolderApprovedBy = req.user.id;
+          report.budgetHolderApprovedAt = new Date();
+          const budgetHolderId = String(report.selected_approver_id || "");
+          const lineManagerId = String(report.lineManagerId || "");
+          if (!lineManagerId || lineManagerId === budgetHolderId) {
+            report.status = "SUBMITTED_TO_FINANCE";
+          }
+        }
         if (stage.level === "FINANCE_ADMIN") {
           report.financeSignedName = req.currentUser?.name || req.user.name;
           report.financeSignature = req.body.signature || report.financeSignedName;
@@ -776,6 +921,10 @@ async function updateReimbursementStatus(req, res) {
           report.lineManagerDeclinedBy = req.user.id;
           report.lineManagerDeclinedAt = new Date();
           report.lineManagerDeclineReason = comment.trim();
+        } else if (stage.level === "BUDGET_HOLDER") {
+          report.budgetHolderDeclinedBy = req.user.id;
+          report.budgetHolderDeclinedAt = new Date();
+          report.budgetHolderDeclineReason = comment.trim();
         } else {
           report.financeDeclinedBy = req.user.id;
           report.financeDeclinedAt = new Date();
@@ -816,6 +965,7 @@ async function updateReimbursementStatus(req, res) {
     );
   } else if (status === "approved") {
     const nextStage = {
+      SUBMITTED_TO_BUDGET_HOLDER: APPROVAL_STAGES.SUBMITTED_TO_BUDGET_HOLDER,
       SUBMITTED_TO_LINE_MANAGER: APPROVAL_STAGES.SUBMITTED_TO_LINE_MANAGER,
       SUBMITTED_TO_FINANCE: APPROVAL_STAGES.SUBMITTED_TO_FINANCE,
     }[report.status];
@@ -825,12 +975,21 @@ async function updateReimbursementStatus(req, res) {
         await notifyReimbursementUser(recipient, "reimbursement_submitted", response);
       }
     }
-    if (report.status === "SUBMITTED_TO_FINANCE" && response.financeCcAdminId) {
-      await notifyReimbursementUser(
-        response.financeCcAdminId,
-        "reimbursement_cc",
-        response
-      );
+    if (report.status === "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT") {
+      const budgetHolderId = String(response.selected_approver_id?._id || response.selected_approver_id || "");
+      const lineManagerId = String(response.lineManagerId?._id || response.lineManagerId || "");
+      if (lineManagerId && lineManagerId !== budgetHolderId) {
+        await notifyReimbursementUser(response.lineManagerId, "reimbursement_cc", response);
+      }
+    }
+    if (report.status === "SUBMITTED_TO_FINANCE") {
+      const nextStage = APPROVAL_STAGES.SUBMITTED_TO_FINANCE;
+      for (const recipient of await stageRecipients(nextStage, response)) {
+        await notifyReimbursementUser(recipient, "reimbursement_submitted", response);
+      }
+    }
+    if (report.status === "PAYMENT_PROCESSING" && response.financeCcAdminId) {
+      await notifyReimbursementUser(response.financeCcAdminId, "reimbursement_cc", response);
     }
     await notifyReimbursementUser(submitter, "reimbursement_approved", response);
   }
@@ -847,6 +1006,9 @@ async function downloadReimbursementPdf(req, res) {
   }
 
   await ensureCanAccessReport(req.user, report);
+  if (!canViewMergedReimbursementPackage(req.user, report)) {
+    throw new HttpError(403, "Only the submitter, Budget Holder, or Finance can download the merged reimbursement package");
+  }
 
   const [response] = await attachLineItems([report]);
   const hasOtherExpenses = response.lineItems.some(
@@ -881,6 +1043,9 @@ async function downloadPaymentVoucherPdf(req, res) {
   }
 
   await ensureCanAccessReport(req.user, report);
+  if (!canViewMergedReimbursementPackage(req.user, report)) {
+    throw new HttpError(403, "Only the submitter, Budget Holder, or Finance can download the Payment Voucher");
+  }
 
   const [response] = await attachLineItems([report]);
   buildPaymentVoucherPdf(res, response);
@@ -905,7 +1070,7 @@ async function uploadReimbursementAttachment(req, res) {
   ) {
     throw new HttpError(400, "Add an Other Expenses line to the TER before uploading its supporting document");
   }
-  const category = REIMBURSEMENT_ATTACHMENT_AUDIENCES[documentType] || req.body.category;
+  const category = REIMBURSEMENT_ATTACHMENT_AUDIENCES[documentType] || "line_manager";
   if (!["financial", "supervisor", "line_manager"].includes(category)) {
     throw new HttpError(400, "Select a valid document audience");
   }

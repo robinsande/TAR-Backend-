@@ -93,16 +93,17 @@ function buildReimbursementDraftData(
   payload,
   submitterId,
   supervisorId,
+  budgetHolderId,
   lineManagerId,
   fallbackProfile = {}
 ) {
   const initialStatus = supervisorId
     ? "SUBMITTED_TO_SUPERVISOR"
-    : "SUBMITTED_TO_LINE_MANAGER";
+    : "SUBMITTED_TO_BUDGET_HOLDER";
   return {
     travelRequest: payload.travelRequestId,
     submittedBy: submitterId,
-    selected_approver_id: lineManagerId,
+    selected_approver_id: budgetHolderId || lineManagerId,
     supervisorId,
     lineManagerId,
     financeAdminId: payload.financeAdminId,
@@ -182,7 +183,7 @@ function applyReimbursementResubmission(report, payload, supervisorId) {
   report.version += 1;
   report.status = supervisorId
     ? "SUBMITTED_TO_SUPERVISOR"
-    : "SUBMITTED_TO_LINE_MANAGER";
+    : "SUBMITTED_TO_BUDGET_HOLDER";
   report.approvedAt = null;
   resetReimbursementDecision(report);
   report.submittedAt = new Date();

@@ -83,8 +83,8 @@ const updateReimbursementValidator = [
 
 const updateReimbursementStatusValidator = [
   body("status")
-    .isIn(["review_started", "approved", "rejected", "completed"])
-    .withMessage("Status must be review_started, approved, rejected, or completed"),
+    .isIn(["review_started", "approved", "rejected", "acknowledged", "completed"])
+    .withMessage("Status must be review_started, approved, rejected, acknowledged, or completed"),
   body("comment")
     .if(body("status").equals("rejected"))
     .isString()

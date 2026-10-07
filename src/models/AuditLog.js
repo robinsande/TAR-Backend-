@@ -17,6 +17,7 @@ const auditLogSchema = new mongoose.Schema(
         "reimbursement_approved",
         "reimbursement_rejected",
         "reimbursement_review_started",
+        "reimbursement_acknowledged",
         "reimbursement_completed",
       ],
       required: true,

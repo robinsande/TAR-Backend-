@@ -207,13 +207,15 @@ function buildSuperAdminApprovalNotification(requestDocument) {
 function buildReimbursementNotificationContent(type, report) {
   const destination = report.travelRequest?.itinerary?.destination || "the trip";
   const amount = Number(report.totalAmountKsh || 0).toFixed(2);
-  const financeApproverName = report.financeAdminId?.name || "the assigned Finance Admin";
-
   switch (type) {
     case "reimbursement_cc":
       return {
-        subject: "Reimbursement copied for your information",
-        message: `A reimbursement request for ${destination} totaling KES ${amount} has been assigned to ${financeApproverName}. You are copied for information only and are not the assigned approver.`,
+        subject: report.status === "PAYMENT_PROCESSING"
+          ? "Reimbursement payment is being processed"
+          : "Reimbursement copy requires your acknowledgement",
+        message: report.status === "PAYMENT_PROCESSING"
+          ? `Finance approved the reimbursement for ${destination} totaling KES ${amount}, and payment is now being processed. As the copied Finance Admin, sign the acknowledgement on the reimbursement details page.`
+          : `A reimbursement request for ${destination} totaling KES ${amount} has been approved by its Budget Holder. Review the Back-to-Office Report and sign the acknowledgement on the reimbursement details page before it is sent to Finance.`,
       };
     case "reimbursement_submitted":
       return {
@@ -226,16 +228,22 @@ function buildReimbursementNotificationContent(type, report) {
         message: `A reimbursement request for ${destination} totaling KES ${amount} was edited and resubmitted for your review.`,
       };
     case "reimbursement_approved":
-      if (report.status === "SUBMITTED_TO_LINE_MANAGER") {
+      if (report.status === "SUBMITTED_TO_BUDGET_HOLDER") {
         return {
           subject: "Reimbursement approved by Supervisor",
-          message: `Your reimbursement request for ${destination} was approved by your Supervisor and forwarded to the Line Manager.`,
+          message: `Your reimbursement request for ${destination} was approved by your Supervisor and forwarded to the TAR Budget Holder.`,
         };
       }
       if (report.status === "SUBMITTED_TO_FINANCE") {
         return {
-          subject: "Reimbursement approved by Line Manager",
-          message: `Your reimbursement request for ${destination} was approved by the Line Manager and forwarded to Finance.`,
+          subject: "Reimbursement forwarded to Finance",
+          message: `Your reimbursement request for ${destination} was approved by the TAR Budget Holder and is now with Finance for final review.`,
+        };
+      }
+      if (report.status === "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT") {
+        return {
+          subject: "Budget Holder approved your reimbursement",
+          message: `Your reimbursement request for ${destination} was approved by the TAR Budget Holder and sent to the Line Manager to acknowledge the Back-to-Office Report before Finance review.`,
         };
       }
       if (report.status === "PAYMENT_PROCESSING") {
