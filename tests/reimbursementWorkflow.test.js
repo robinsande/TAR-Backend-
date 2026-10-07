@@ -91,9 +91,8 @@ function buildReimbursementPayload(travelRequestId, _selectedApproverId, overrid
     financeAdminId: defaultFinanceAdminId?.toString(),
     paymentRequestPurpose: "Approved travel expenses",
     paymentDetails: {
-      paymentMethod: "bank_transfer",
-      bankName: "Test Bank",
-      bankAccountNumber: "123456789",
+      paymentMethod: "mpesa",
+      mpesaNumber: "0712345678",
     },
     requesterSignedName: "Requester Signature",
     requesterSignature: testRequesterSignature,
@@ -236,6 +235,10 @@ describe("reimbursement workflow", () => {
     expect(response.body.employeeNumber).toBe("R691");
     expect(response.body.department).toBe("ADMIN");
     expect(response.body.paymentRequestPurpose).toBe("Approved travel expenses");
+    expect(response.body.paymentDetails).toMatchObject({
+      paymentMethod: "mpesa",
+      mpesaNumber: "0712345678",
+    });
     expect(response.body.lineItems[0].invoiceNumber).toBe("INV-TER-001");
     expect(response.body.travelRequest.project).toMatchObject({
       fundCode: "DEC16",
@@ -307,6 +310,34 @@ describe("reimbursement workflow", () => {
       email: "manager-signature@example.com",
       role: "admin",
     });
+
+    it("requires M-PESA as the payment method and a mobile number", async () => {
+      const manager = await createUser({
+        name: "M-PESA Line Manager",
+        email: "mpesa-line-manager@example.com",
+        role: "admin",
+      });
+      const requester = await createUser({
+        name: "M-PESA Requester",
+        email: "mpesa-requester@example.com",
+        managerId: manager._id,
+      });
+      const travelRequestId = await createApprovedTravelRequest(manager, requester);
+      const requesterToken = await login(requester.email);
+      const payload = buildReimbursementPayload(travelRequestId, manager._id);
+
+      const unsupportedMethod = await request(app)
+        .post("/api/reimbursements")
+        .set("Authorization", "Bearer " + requesterToken)
+        .send({ ...payload, paymentDetails: { ...payload.paymentDetails, paymentMethod: "bank_transfer" } });
+      const missingNumber = await request(app)
+        .post("/api/reimbursements")
+        .set("Authorization", "Bearer " + requesterToken)
+        .send({ ...payload, paymentDetails: { paymentMethod: "mpesa", mpesaNumber: "" } });
+
+      expect(unsupportedMethod.status).toBe(400);
+      expect(missingNumber.status).toBe(400);
+    }, 20000);
     const requester = await createUser({
       name: "Requester Signature",
       email: "requester-signature@example.com",

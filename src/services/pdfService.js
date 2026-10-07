@@ -853,36 +853,36 @@ function drawPaymentRequestPage(doc, report) {
   fieldRow(doc, [
     {
       label: "Payment by Cheque No.",
-      value: `${paymentDetails.paymentMethod === "cheque" ? "[X]" : "[ ]"} ${paymentDetails.chequeNumber || ""}`,
+      value: "[ ]",
     },
     {
       label: "Bank Transfer",
       value: paymentDetails.paymentMethod === "bank_transfer" ? "[X]" : "[ ]",
     },
     {
-      label: "Safe Cash",
-      value: paymentDetails.paymentMethod === "safe_cash" ? "[X]" : "[ ]",
+      label: "M-PESA",
+      value: paymentDetails.paymentMethod === "mpesa" ? "[X]" : "[ ]",
     },
   ]);
   fieldRow(doc, [
-    { label: "Picked Up By:", value: paymentDetails.pickedUpBy },
-    { label: "Mailed To:", value: paymentDetails.mailedTo },
-    { label: "Mobile Number:", value: paymentDetails.mobileNumber },
+    { label: "Picked Up By:", value: "" },
+    { label: "Mailed To:", value: "" },
+    { label: "Mobile Number:", value: paymentDetails.mpesaNumber },
   ]);
   fieldRow(doc, [
-    { label: "Bank Name:", value: paymentDetails.bankName },
-    { label: "Bank Address:", value: paymentDetails.bankAddress },
-    { label: "Bank Account No.:", value: paymentDetails.bankAccountNumber },
+    { label: "Bank Name:", value: "" },
+    { label: "Bank Address:", value: "" },
+    { label: "Bank Account No.:", value: "" },
   ]);
   fieldRow(doc, [
-    { label: "SWIFT Code:", value: paymentDetails.swiftCode },
-    { label: "Beneficiary Name:", value: paymentDetails.beneficiaryName },
-    { label: "Sort Code:", value: paymentDetails.sortCode },
+    { label: "SWIFT Code:", value: "" },
+    { label: "Beneficiary Name:", value: "" },
+    { label: "Sort Code:", value: "" },
   ]);
   fieldRow(doc, [
-    { label: "Intermediary Bank Address:", value: paymentDetails.intermediaryBankAddress },
-    { label: "Intermediary Bank Account No.:", value: paymentDetails.intermediaryBankAccountNumber },
-    { label: "Intermediary SWIFT / ABA:", value: paymentDetails.intermediarySwiftAba },
+    { label: "Intermediary Bank Address:", value: "" },
+    { label: "Intermediary Bank Account No.:", value: "" },
+    { label: "Intermediary SWIFT / ABA:", value: "" },
   ]);
   const purposeY = doc.y + 2;
   drawBox(doc, PAGE.margin, purposeY, contentWidth(), 42, {

@@ -36,21 +36,14 @@ const reimbursementHeaderValidators = [
     .notEmpty()
     .withMessage("Payment Request purpose is required"),
   body("paymentDetails.paymentMethod")
-    .isIn(["cheque", "bank_transfer", "safe_cash"])
-    .withMessage("Select a valid payment method"),
-  body("paymentDetails.chequeNumber").optional({ values: "falsy" }).isString().isLength({ max: 80 }),
-  body("paymentDetails.pickedUpBy").optional({ values: "falsy" }).isString().isLength({ max: 120 }),
-  body("paymentDetails.mailedTo").optional({ values: "falsy" }).isString().isLength({ max: 200 }),
-  body("paymentDetails.mobileNumber").optional({ values: "falsy" }).isString().isLength({ max: 40 }),
-  body("paymentDetails.bankName").optional({ values: "falsy" }).isString().isLength({ max: 120 }),
-  body("paymentDetails.bankAddress").optional({ values: "falsy" }).isString().isLength({ max: 200 }),
-  body("paymentDetails.bankAccountNumber").optional({ values: "falsy" }).isString().isLength({ max: 80 }),
-  body("paymentDetails.swiftCode").optional({ values: "falsy" }).isString().isLength({ max: 40 }),
-  body("paymentDetails.beneficiaryName").optional({ values: "falsy" }).isString().isLength({ max: 120 }),
-  body("paymentDetails.sortCode").optional({ values: "falsy" }).isString().isLength({ max: 40 }),
-  body("paymentDetails.intermediaryBankAddress").optional({ values: "falsy" }).isString().isLength({ max: 200 }),
-  body("paymentDetails.intermediaryBankAccountNumber").optional({ values: "falsy" }).isString().isLength({ max: 80 }),
-  body("paymentDetails.intermediarySwiftAba").optional({ values: "falsy" }).isString().isLength({ max: 40 }),
+    .equals("mpesa")
+    .withMessage("M-PESA is the supported reimbursement payment method"),
+  body("paymentDetails.mpesaNumber")
+    .isString()
+    .trim()
+    .notEmpty()
+    .isLength({ max: 40 })
+    .withMessage("Enter the mobile number registered for M-PESA"),
 ];
 
 const reimbursementLineItemValidators = [
