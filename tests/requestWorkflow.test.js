@@ -121,6 +121,48 @@ afterAll(async () => {
 });
 
 describe("authentication and authorization", () => {
+  it("returns the requester signature from their latest approved TAR", async () => {
+    const requester = await createUser({
+      name: "Signature Requester",
+      email: "tar-signature-requester@example.com",
+    });
+    const manager = await createUser({
+      name: "Signature Manager",
+      email: "tar-signature-manager@example.com",
+      role: "admin",
+    });
+    const requesterToken = await login(requester.email);
+    const managerToken = await login(manager.email);
+
+    const created = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(manager._id, {
+        requesterSignature: "Signature Requester",
+        passengers: [passengerFor(requester)],
+      }));
+    expect(created.status).toBe(201);
+
+    await request(app)
+      .patch(`/api/requests/${created.body._id}/budget-holder/approve`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send({ signature: "Budget Holder Signature" });
+    const approved = await request(app)
+      .patch(`/api/requests/${created.body._id}/approve`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ signature: "Manager Signature" });
+    expect(approved.status).toBe(200);
+
+    const previousSignature = await request(app)
+      .get("/api/requests/my-signature")
+      .set("Authorization", "Bearer " + requesterToken);
+    expect(previousSignature.status).toBe(200);
+    expect(previousSignature.body).toEqual({
+      signature: "Signature Requester",
+      source: "approved_tar",
+    });
+  });
+
   it("requires authenticator enrollment before returning a JWT token", async () => {
     const user = await createUser({
       name: "Alice User",

@@ -987,7 +987,7 @@ function drawPaymentRequestPage(doc, report) {
   field(margin, 435, width * 0.46, "Name of the Supervisor:", report.supervisorId?.name || "Not assigned");
   field(margin + width * 0.46, 435, width * 0.30, "Designation:", report.supervisorId?.position);
   doc.font("Helvetica-Bold").fontSize(6.5).text("Signature:", margin + width * 0.77, 438, { width: 40, height: 9 });
-  signature(report.supervisorSignedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 12);
+  signature(report.supervisorSignature || report.supervisorSignedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 12);
   rule(450);
 
   const approvals = [
@@ -1002,14 +1002,14 @@ function drawPaymentRequestPage(doc, report) {
       title: "Reviewed by:",
       name: report.financeAdminId?.name,
       designation: report.financeAdminId?.position,
-      signature: report.financeSignedName,
+      signature: report.financeSignature || report.financeSignedName,
       date: formatDate(report.financeApprovedAt),
     },
     {
       title: "Approved by:",
       name: report.lineManagerId?.name,
       designation: report.lineManagerId?.position,
-      signature: report.lineManagerSignedName,
+      signature: report.lineManagerSignature || report.lineManagerSignedName,
       date: formatDate(report.lineManagerApprovedAt),
     },
   ];

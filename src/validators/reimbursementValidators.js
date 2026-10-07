@@ -92,6 +92,11 @@ const updateReimbursementStatusValidator = [
     .notEmpty()
     .withMessage("Rejection comment is required"),
   body("comment").optional({ values: "null" }).isString(),
+  body("signature")
+    .optional({ values: "falsy" })
+    .isString()
+    .isLength({ max: 1500000 })
+    .withMessage("Approval signature must be valid text or a saved signature image"),
 ];
 
 module.exports = {

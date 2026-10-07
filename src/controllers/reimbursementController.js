@@ -576,8 +576,11 @@ async function updateReimbursement(req, res) {
   report.paymentRequestPurpose = req.body.paymentRequestPurpose;
   report.paymentDetails = req.body.paymentDetails || {};
   report.supervisorSignedName = null;
+  report.supervisorSignature = null;
   report.lineManagerSignedName = null;
+  report.lineManagerSignature = null;
   report.financeSignedName = null;
+  report.financeSignature = null;
   for (const field of [
     "supervisorApprovedBy",
     "supervisorApprovedAt",
@@ -697,16 +700,19 @@ async function updateReimbursementStatus(req, res) {
         report.status = stage.approved;
         if (stage.level === "SUPERVISOR") {
           report.supervisorSignedName = req.currentUser?.name || req.user.name;
+          report.supervisorSignature = req.body.signature || report.supervisorSignedName;
           report.supervisorApprovedBy = req.user.id;
           report.supervisorApprovedAt = new Date();
         }
         if (stage.level === "LINE_MANAGER") {
           report.lineManagerSignedName = req.currentUser?.name || req.user.name;
+          report.lineManagerSignature = req.body.signature || report.lineManagerSignedName;
           report.lineManagerApprovedBy = req.user.id;
           report.lineManagerApprovedAt = new Date();
         }
         if (stage.level === "FINANCE_ADMIN") {
           report.financeSignedName = req.currentUser?.name || req.user.name;
+          report.financeSignature = req.body.signature || report.financeSignedName;
           report.financeApprovedBy = req.user.id;
           report.financeApprovedAt = new Date();
         }

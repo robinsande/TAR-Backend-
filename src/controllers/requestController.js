@@ -127,6 +127,33 @@ async function createRequest(req, res) {
   return res.status(201).json(populated);
 }
 
+async function getMyRequesterSignature(req, res) {
+  const user = await User.findById(req.user.id).select("name +savedSignature");
+  const previousSignedRequest = await TravelRequest.findOne({
+    requestedBy: req.user.id,
+    status: "approved",
+    requesterSignature: { $exists: true, $nin: [null, ""] },
+  })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select("requesterSignature");
+
+  const previousSignature = String(previousSignedRequest?.requesterSignature || "").trim();
+  const validPreviousSignature =
+    /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(previousSignature) ||
+    previousSignature.toLowerCase() === String(user?.name || "").trim().toLowerCase();
+  if (validPreviousSignature) {
+    return res.json({
+      signature: previousSignature,
+      source: "approved_tar",
+    });
+  }
+
+  return res.json({
+    signature: user?.savedSignature || null,
+    source: user?.savedSignature ? "saved_profile" : null,
+  });
+}
+
 async function listRequests(req, res) {
   const pagination = getPagination(req.query);
   const query = TravelRequest.find(req.requestScope).sort({ createdAt: -1 });
@@ -777,6 +804,7 @@ async function rerouteApproval(req, res) {
 
 module.exports = {
   createRequest,
+  getMyRequesterSignature,
   listRequests,
   downloadTravelRequestsPdf,
   remindApprover,

@@ -93,6 +93,7 @@ const approveTravelRequestValidator = [
       const trimmed = value.trim();
       if (!trimmed) throw new Error("Approver signature cannot be empty");
       if (trimmed.length < 2) throw new Error("Approver signature is too short");
+      if (trimmed.length > 1500000) throw new Error("Approver signature is too large");
       return true;
     })
     .withMessage("Approver signature is required"),
@@ -104,6 +105,7 @@ const approveBudgetHolderRequestValidator = [
     .isString()
     .trim()
     .isLength({ min: 2 })
+    .isLength({ max: 1500000 })
     .withMessage("Budget holder signature is required"),
 ];
 

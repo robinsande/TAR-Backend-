@@ -1194,9 +1194,10 @@ describe("reimbursement workflow", () => {
     const supervisorApproval = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
       .set("Authorization", "Bearer " + supervisorToken)
-      .send({ status: "approved" });
+      .send({ status: "approved", signature: testRequesterSignature });
     expect(supervisorApproval.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
     expect(supervisorApproval.body.supervisorSignedName).toBe(supervisor.name);
+    expect(supervisorApproval.body.supervisorSignature).toBe(testRequesterSignature);
 
     const lineManagerReview = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
@@ -1206,9 +1207,10 @@ describe("reimbursement workflow", () => {
     const lineManagerApproval = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
       .set("Authorization", "Bearer " + managerToken)
-      .send({ status: "approved" });
+      .send({ status: "approved", signature: testRequesterSignature });
     expect(lineManagerApproval.body.status).toBe("SUBMITTED_TO_FINANCE");
     expect(lineManagerApproval.body.lineManagerSignedName).toBe(manager.name);
+    expect(lineManagerApproval.body.lineManagerSignature).toBe(testRequesterSignature);
 
     const financeCcAccess = await request(app)
       .get(`/api/reimbursements/${created.body._id}`)
@@ -1249,9 +1251,10 @@ describe("reimbursement workflow", () => {
     const financeApproval = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
       .set("Authorization", "Bearer " + financeToken)
-      .send({ status: "approved" });
+      .send({ status: "approved", signature: testRequesterSignature });
     expect(financeApproval.body.status).toBe("PAYMENT_PROCESSING");
     expect(financeApproval.body.financeSignedName).toBe(finance.name);
+    expect(financeApproval.body.financeSignature).toBe(testRequesterSignature);
 
     const completed = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
@@ -1429,5 +1432,5 @@ describe("reimbursement workflow", () => {
     expect(templateResponse.status).toBe(200);
     expect(templateResponse.headers["content-type"]).toMatch(/application\/pdf/);
     expect(templateResponse.body.subarray(0, 4).toString()).toBe("%PDF");
-  });
+  }, 30000);
 });

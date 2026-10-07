@@ -115,6 +115,7 @@ Test logins (password `Password123!`):
 - `PATCH /api/users/:id/roles` (superadmin; assign or remove `supervisor`, `finance_admin`, and `auditor`)
 
 ### Travel requests (JWT)
+- `GET /api/requests/my-signature` (requester's signature from their latest approved TAR; falls back to their saved profile signature)
 - `POST /api/requests` (staff roles, including superadmin and super-superadmin accounts)
 - `GET /api/requests` — query: `scope=mine|team|all`, `status`, `destination`, `dateFrom`, `dateTo`, `requestedByEmail`, `search`, `page`, `limit`
 - Auditor and superadmin read access is organization-wide; auditors cannot create, edit, approve, or reject TARs.

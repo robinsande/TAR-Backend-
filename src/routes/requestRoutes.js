@@ -14,6 +14,7 @@ const {
 } = require("../validators/requestValidators");
 const {
   createRequest,
+  getMyRequesterSignature,
   listRequests,
   downloadTravelRequestsPdf,
   getRequestById,
@@ -36,6 +37,8 @@ const {
 const router = express.Router();
 
 router.use(authenticate);
+
+router.get("/my-signature", asyncHandler(getMyRequesterSignature));
 
 router.get(
   "/pending-my-approval",

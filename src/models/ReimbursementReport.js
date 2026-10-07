@@ -100,8 +100,11 @@ const reimbursementReportSchema = new mongoose.Schema(
       mpesaNumber: { type: String, trim: true, default: "", maxlength: 40 },
     },
     supervisorSignedName: { type: String, trim: true, default: null },
+    supervisorSignature: { type: String, trim: true, default: null, maxlength: 1500000 },
     lineManagerSignedName: { type: String, trim: true, default: null },
+    lineManagerSignature: { type: String, trim: true, default: null, maxlength: 1500000 },
     financeSignedName: { type: String, trim: true, default: null },
+    financeSignature: { type: String, trim: true, default: null, maxlength: 1500000 },
     attachments: {
       type: [{
         category: {
