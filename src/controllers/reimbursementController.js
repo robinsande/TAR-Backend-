@@ -849,9 +849,14 @@ async function downloadReimbursementPdf(req, res) {
   await ensureCanAccessReport(req.user, report);
 
   const [response] = await attachLineItems([report]);
+  const hasOtherExpenses = response.lineItems.some(
+    (item) => item.category === "OTHER EXPENSES"
+  );
   const expenseDocuments = await Promise.all(
     (response.attachments || [])
-      .filter((attachment) => attachment.documentType === "expense_document")
+      .filter((attachment) =>
+        hasOtherExpenses && attachment.documentType === "expense_document"
+      )
       .map(async (attachment) => ({
         buffer: await getAttachmentBuffer(attachment.storageId),
         mimeType: attachment.mimeType,
