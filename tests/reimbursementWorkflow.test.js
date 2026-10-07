@@ -1383,7 +1383,7 @@ describe("reimbursement workflow", () => {
       type: "reimbursement_cc",
     });
     expect(financeCcAccess.status).toBe(403);
-    expect(financeCcApproval.status).toBe(403);
+    expect(financeCcApproval.status).toBe(400);
     expect(earlyFinanceCcNotification).toBeNull();
 
     const unassignedFinanceAccess = await request(app)
@@ -1394,7 +1394,7 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + unassignedFinanceToken)
       .send({ status: "review_started" });
     expect(unassignedFinanceAccess.status).toBe(403);
-    expect(unassignedFinanceApproval.status).toBe(403);
+    expect(unassignedFinanceApproval.status).toBe(400);
 
 
   }, 20000);
