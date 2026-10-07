@@ -50,7 +50,7 @@ async function resolvePassengers(rawPassengers = []) {
   const users = await User.find({
     _id: { $in: orderedIds },
     isActive: true,
-    role: { $in: ["user", "admin", "approver_budget_holder", "superadmin"] },
+    role: { $in: ["user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"] },
   }).select(PASSENGER_SELECT);
 
   const byId = new Map(users.map((user) => [user._id.toString(), user]));

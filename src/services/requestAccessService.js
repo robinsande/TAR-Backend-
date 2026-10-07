@@ -46,16 +46,16 @@ async function buildRequestScope(user, listScope) {
   const personal = buildPersonalRequestScope(user.id);
   const normalized = String(listScope || "").toLowerCase();
 
+  if (normalized === "mine") {
+    return personal;
+  }
+
   if (user.roles?.includes("auditor")) {
     return {};
   }
 
   if (user.role === "super_superadmin") {
     return { status: "approved", "modeOfTravel.aircraft": true };
-  }
-
-  if (normalized === "mine") {
-    return personal;
   }
 
   if (user.role === "superadmin") {
@@ -98,15 +98,15 @@ async function canAccessRequest(user, request) {
     return true;
   }
 
-  if (user.role === "super_superadmin") {
-    return request.status === "approved" && request.modeOfTravel?.aircraft === true;
-  }
-
   const requesterId = idToString(request.requestedBy);
   const approverIds = getRequestApproverIds(request);
 
   if (requesterId === user.id || isPassengerOnRequest(request, user.id)) {
     return true;
+  }
+
+  if (user.role === "super_superadmin") {
+    return request.status === "approved" && request.modeOfTravel?.aircraft === true;
   }
 
   if (["admin", "approver_budget_holder"].includes(user.role)) {

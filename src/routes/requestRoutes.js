@@ -67,7 +67,7 @@ router.patch(
 
 router.post(
   "/",
-  requireRole("user", "admin", "approver_budget_holder", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"),
   createTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(createRequest)
@@ -146,7 +146,7 @@ router.patch(
 
 router.patch(
   "/:id",
-  requireRole("user", "admin", "approver_budget_holder", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"),
   resubmitTravelRequestValidator,
   validationErrorHandler,
   asyncHandler(resubmitRequest)

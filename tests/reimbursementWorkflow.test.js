@@ -482,12 +482,80 @@ describe("reimbursement workflow", () => {
       .send(buildReimbursementPayload(travelRequestTwo, manager._id));
 
     const response = await request(app)
-      .get("/api/reimbursements/my-requests")
+      .get("/api/reimbursements/my-requests?scope=all")
       .set("Authorization", `Bearer ${superadminToken}`);
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveLength(2);
   });
+
+  it("allows superadmin and super-superadmin staff to create TARs and reimbursements", async () => {
+    const manager = await createUser({
+      name: "Line Manager",
+      email: "staff-line-manager@example.com",
+      role: "admin",
+    });
+    const superadmin = await createUser({
+      name: "Superadmin Staff",
+      email: "superadmin-staff@example.com",
+      role: "superadmin",
+      managerId: manager._id,
+    });
+    const superSuperadmin = await createUser({
+      name: "Super-superadmin Staff",
+      email: "super-superadmin-staff@example.com",
+      role: "super_superadmin",
+      managerId: manager._id,
+    });
+
+    const superadminTarId = await createApprovedTravelRequest(manager, superadmin);
+    const superSuperadminTarId = await createApprovedTravelRequest(manager, superSuperadmin);
+    const superadminToken = await login(superadmin.email);
+    const superSuperadminToken = await login(superSuperadmin.email);
+    const superadminTarDetail = await request(app)
+      .get(`/api/requests/${superadminTarId}`)
+      .set("Authorization", "Bearer " + superadminToken);
+    const superSuperadminTarList = await request(app)
+      .get("/api/requests?scope=mine")
+      .set("Authorization", "Bearer " + superSuperadminToken);
+    const superSuperadminTarDetail = await request(app)
+      .get(`/api/requests/${superSuperadminTarId}`)
+      .set("Authorization", "Bearer " + superSuperadminToken);
+    const superadminReport = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + superadminToken)
+      .send(buildReimbursementPayload(superadminTarId, manager._id));
+    const superSuperadminReport = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + superSuperadminToken)
+      .send(buildReimbursementPayload(superSuperadminTarId, manager._id));
+
+    expect(superadminReport.status).toBe(201);
+    expect(superSuperadminReport.status).toBe(201);
+    expect(superadminTarDetail.status).toBe(200);
+    expect(superSuperadminTarList.body.data).toHaveLength(1);
+    expect(superSuperadminTarDetail.status).toBe(200);
+
+    const superadminMine = await request(app)
+      .get("/api/reimbursements/my-requests")
+      .set("Authorization", "Bearer " + superadminToken);
+    const superadminAll = await request(app)
+      .get("/api/reimbursements/my-requests?scope=all")
+      .set("Authorization", "Bearer " + superadminToken);
+    const superSuperadminMine = await request(app)
+      .get("/api/reimbursements/my-requests")
+      .set("Authorization", "Bearer " + superSuperadminToken);
+    const superSuperadminAll = await request(app)
+      .get("/api/reimbursements/my-requests?scope=all")
+      .set("Authorization", "Bearer " + superSuperadminToken);
+
+    expect(superadminMine.body).toHaveLength(1);
+    expect(superadminMine.body[0].submittedBy.email).toBe(superadmin.email);
+    expect(superadminAll.body).toHaveLength(2);
+    expect(superSuperadminMine.body).toHaveLength(1);
+    expect(superSuperadminMine.body[0].submittedBy.email).toBe(superSuperadmin.email);
+    expect(superSuperadminAll.body).toHaveLength(2);
+  }, 30000);
 
   it("allows auditors to read TARs and reimbursement history without approving", async () => {
     const manager = await createUser({
@@ -564,7 +632,7 @@ describe("reimbursement workflow", () => {
       .get("/api/requests?scope=all")
       .set("Authorization", "Bearer " + auditorToken);
     const reimbursementList = await request(app)
-      .get("/api/reimbursements/my-requests")
+      .get("/api/reimbursements/my-requests?scope=all")
       .set("Authorization", "Bearer " + auditorToken);
     const reimbursementDetail = await request(app)
       .get(`/api/reimbursements/${created.body._id}`)

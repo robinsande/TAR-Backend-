@@ -244,9 +244,11 @@ async function createReimbursement(req, res) {
 }
 
 async function getMyReimbursements(req, res) {
-  const scope =
+  const canViewAll =
     ["superadmin", "super_superadmin"].includes(req.user.role) ||
-    req.user.roles?.includes("auditor")
+    req.user.roles?.includes("auditor");
+  const scope =
+    canViewAll && String(req.query.scope || "").toLowerCase() === "all"
       ? {}
       : { submittedBy: req.user.id };
   const queryFilters = await buildReimbursementFilters(req.query, req.user);

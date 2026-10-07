@@ -115,9 +115,10 @@ Test logins (password `Password123!`):
 - `PATCH /api/users/:id/roles` (superadmin; assign or remove `supervisor`, `finance_admin`, and `auditor`)
 
 ### Travel requests (JWT)
-- `POST /api/requests` (user | admin)
+- `POST /api/requests` (staff roles, including superadmin and super-superadmin accounts)
 - `GET /api/requests` — query: `scope=mine|team|all`, `status`, `destination`, `dateFrom`, `dateTo`, `requestedByEmail`, `search`, `page`, `limit`
 - Auditor and superadmin read access is organization-wide; auditors cannot create, edit, approve, or reject TARs.
+- A superadmin or super-superadmin may use `scope=mine` to access their own TARs for staff workflows; their organization-wide review views remain available.
 - `GET /api/requests/pending-my-approval` (admin)
 - `GET /api/requests/:id`
 - `PATCH /api/requests/:id/approve` (admin, assigned approver)
@@ -128,10 +129,10 @@ Test logins (password `Password123!`):
 ### Reimbursements (JWT)
 - `GET /api/reimbursements/expense-categories`
 - `GET /api/reimbursements/template/ter.pdf` (blank landscape Travel Expense Report template)
-- `GET /api/reimbursements/my-requests` (submitter sees own; auditor and superadmin see all)
+- `GET /api/reimbursements/my-requests` (own reports by default; auditor and superadmin may pass `scope=all`)
 - `GET /api/reimbursements/team` (role-scoped team/approval queue; auditor and superadmin see all)
 - `GET /api/reimbursements/pending-approvals` (assigned Supervisor, TAR Line Manager, or Finance Admin)
-- `POST /api/reimbursements` (user | admin)
+- `POST /api/reimbursements` (staff roles, including superadmin and super-superadmin accounts)
 - `GET /api/reimbursements/:id`
 - `PATCH /api/reimbursements/:id` (owner, declined only; resubmission restarts Supervisor review)
 - `PATCH /api/reimbursements/:id/status` (`review_started`, `approved`, `rejected`, or `completed`; backend checks the assigned reviewer and current stage)

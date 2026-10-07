@@ -45,7 +45,7 @@ router.get(
 
 router.post(
   "/",
-  requireRole("user", "admin", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"),
   ...createReimbursementValidator,
   validationErrorHandler,
   asyncHandler(createReimbursement)
@@ -53,7 +53,7 @@ router.post(
 
 router.patch(
   "/:id",
-  requireRole("user", "admin", "superadmin"),
+  requireRole("user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"),
   ...updateReimbursementValidator,
   validationErrorHandler,
   asyncHandler(updateReimbursement)
