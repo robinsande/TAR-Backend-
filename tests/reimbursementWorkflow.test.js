@@ -7,6 +7,7 @@ jest.mock("../src/services/emailService", () => ({
 const request = require("supertest");
 const mongoose = require("mongoose");
 const createApp = require("../src/app");
+const { getVoucherExpenseDescription } = require("../src/services/pdfService");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
 const BudgetHolder = require("../src/models/BudgetHolder");
@@ -467,7 +468,7 @@ describe("reimbursement workflow", () => {
 
     expect(valid.status).toBe(201);
     expect(valid.body.lineItems[0].category).toBe("LUNCH");
-    expect(valid.body.lineItems[0].description).toBe("LUNCH");
+    expect(valid.body.lineItems[0].description).toBe("Travel expense");
     expect(valid.body.totalAmountKsh).toBe(1000);
 
     const wrongStandardRate = await request(app)
@@ -1353,6 +1354,7 @@ describe("reimbursement workflow", () => {
         expenseDate: date.toISOString(),
         location: "Kisumu",
         category: "LUNCH",
+        description: index < 8 ? "Per diem in Dadaab" : "",
         amount: 1000,
       };
     });
@@ -1364,6 +1366,10 @@ describe("reimbursement workflow", () => {
       }));
     expect(accepted.status).toBe(201);
     expect(accepted.body.lineItems).toHaveLength(30);
+    expect(accepted.body.lineItems[0].description).toBe("Per diem in Dadaab");
+    expect(accepted.body.lineItems[8].description).toBe("Travel expense");
+    expect(getVoucherExpenseDescription({ category: "LUNCH", description: "LUNCH" }))
+      .toBe("Travel expense");
     const voucherPdf = await request(app)
       .get(`/api/reimbursements/${accepted.body._id}/payment-voucher.pdf`)
       .set("Authorization", "Bearer " + requesterToken);

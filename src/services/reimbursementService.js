@@ -26,7 +26,7 @@ function toDecimal128(amount) {
 function normalizeLineItems(lineItems = []) {
   return lineItems.map((item) => {
     const category = String(item.category || "").trim();
-    const description = String(item.description || "").trim() || category;
+    const description = String(item.description || "").trim() || "Travel expense";
 
     return {
       expenseDate: item.expenseDate,

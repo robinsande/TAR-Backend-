@@ -1062,6 +1062,14 @@ function drawPaymentRequestPage(doc, report) {
   doc.y = Math.min(540, pageHeight - margin);
 }
 
+function getVoucherExpenseDescription(item = {}) {
+  const description = String(item.description || "").trim();
+  const category = String(item.category || "").trim();
+  return description && description.toLowerCase() !== category.toLowerCase()
+    ? description
+    : "Travel expense";
+}
+
 function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
   const lineItems = report.lineItems || [];
   const days = buildTerDayBuckets(lineItems);
@@ -1148,11 +1156,15 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
     : daysWithItems;
   const rows = visibleDays.length
     ? visibleDays.map((day) => {
-        const descriptions = [...new Set(day.items.map((item) => item.description || item.category).filter(Boolean))];
+        const descriptions = [...new Set(
+          day.items
+            .map(getVoucherExpenseDescription)
+            .filter((description) => description !== "Travel expense")
+        )];
         const invoiceNumbers = [...new Set(day.items.map((item) => item.invoiceNumber).filter(Boolean))];
         return [
           day.date ? formatDate(day.date) : "—",
-          descriptions.join("; ") || [...new Set(Object.keys(day.amounts))].join("; "),
+          descriptions.join("; ") || "Travel expense",
           formatCurrency(day.total),
           invoiceNumbers.length > 1 ? `${invoiceNumbers.length} invoices` : invoiceNumbers[0] || "",
           project.fundCode,
@@ -1642,4 +1654,5 @@ module.exports = {
   buildReimbursementPdf,
   buildPaymentVoucherPdf,
   buildEmptyTravelExpenseReportPdf,
+  getVoucherExpenseDescription,
 };
