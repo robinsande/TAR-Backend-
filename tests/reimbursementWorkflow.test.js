@@ -7,7 +7,10 @@ jest.mock("../src/services/emailService", () => ({
 const request = require("supertest");
 const mongoose = require("mongoose");
 const createApp = require("../src/app");
-const { getVoucherExpenseDescription } = require("../src/services/pdfService");
+const {
+  buildVoucherDailySummary,
+  getVoucherExpenseDescription,
+} = require("../src/services/pdfService");
 const User = require("../src/models/User");
 const TravelRequest = require("../src/models/TravelRequest");
 const BudgetHolder = require("../src/models/BudgetHolder");
@@ -1371,8 +1374,29 @@ describe("reimbursement workflow", () => {
     expect(accepted.body.lineItems).toHaveLength(30);
     expect(accepted.body.lineItems[0].description).toBe("Per diem in Dadaab");
     expect(accepted.body.lineItems[8].description).toBe("Travel expense");
-    expect(getVoucherExpenseDescription({ category: "LUNCH", description: "LUNCH" }))
-      .toBe("Travel expense");
+    expect(getVoucherExpenseDescription(" Dadaab ")).toBe("Per diem while in Dadaab");
+    expect(getVoucherExpenseDescription("")).toBe("Per diem");
+    expect(buildVoucherDailySummary({
+      date: new Date("2026-07-01T00:00:00.000Z"),
+      items: [
+        { category: "LUNCH", description: "Lunch", amount: 1000, invoiceNumber: "INV-1" },
+        { category: "DINNER", description: "Dinner", amount: 1500, invoiceNumber: "INV-2" },
+      ],
+    }, "Dadaab", {
+      fundCode: "FUND1",
+      projectId: "PROJECT1",
+      activityId: "ACT1",
+      departmentId: "DEPT1",
+    })).toEqual([
+      "01/07/2026",
+      "Per diem while in Dadaab",
+      "2,500.00",
+      "2 invoices",
+      "FUND1",
+      "PROJECT1",
+      "ACT1",
+      "DEPT1",
+    ]);
     const voucherPdf = await request(app)
       .get(`/api/reimbursements/${accepted.body._id}/payment-voucher.pdf`)
       .set("Authorization", "Bearer " + requesterToken);

@@ -1062,12 +1062,24 @@ function drawPaymentRequestPage(doc, report) {
   doc.y = Math.min(540, pageHeight - margin);
 }
 
-function getVoucherExpenseDescription(item = {}) {
-  const description = String(item.description || "").trim();
-  const category = String(item.category || "").trim();
-  return description && description.toLowerCase() !== category.toLowerCase()
-    ? description
-    : "Travel expense";
+function getVoucherExpenseDescription(destination) {
+  const location = String(destination || "").trim();
+  return location ? `Per diem while in ${location}` : "Per diem";
+}
+
+function buildVoucherDailySummary(day, destination, project) {
+  const items = day.items || [];
+  const invoiceNumbers = [...new Set(items.map((item) => item.invoiceNumber).filter(Boolean))];
+  return [
+    day.date ? formatDate(day.date) : "—",
+    getVoucherExpenseDescription(destination),
+    formatCurrency(items.reduce((sum, item) => sum + Number(item.amount || 0), 0)),
+    invoiceNumbers.length > 1 ? `${invoiceNumbers.length} invoices` : invoiceNumbers[0] || "",
+    project.fundCode,
+    project.projectId,
+    project.activityId,
+    project.departmentId,
+  ];
 }
 
 function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
@@ -1155,31 +1167,16 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
     ? daysWithItems.slice(0, maxVisibleDays - 1)
     : daysWithItems;
   const rows = visibleDays.length
-    ? visibleDays.map((day) => {
-        const descriptions = [...new Set(
-          day.items
-            .map(getVoucherExpenseDescription)
-            .filter((description) => description !== "Travel expense")
-        )];
-        const invoiceNumbers = [...new Set(day.items.map((item) => item.invoiceNumber).filter(Boolean))];
-        return [
-          day.date ? formatDate(day.date) : "—",
-          descriptions.join("; ") || "Travel expense",
-          formatCurrency(day.total),
-          invoiceNumbers.length > 1 ? `${invoiceNumbers.length} invoices` : invoiceNumbers[0] || "",
-          project.fundCode,
-          project.projectId,
-          project.activityId,
-          project.departmentId,
-        ];
-      })
+    ? visibleDays.map((day) =>
+        buildVoucherDailySummary(day, report.travelRequest?.itinerary?.destination, project)
+      )
     : [["—", "No line items", "0.00", "—", project.fundCode, project.projectId, project.activityId, project.departmentId]];
 
   if (hasAdditionalDays) {
     const remainingDays = daysWithItems.slice(maxVisibleDays - 1);
     rows.push([
       "See TER",
-      `Additional daily totals (${remainingDays.length} days)`,
+      `${getVoucherExpenseDescription(report.travelRequest?.itinerary?.destination)} (${remainingDays.length} additional days)`,
       formatCurrency(remainingDays.reduce((sum, day) => sum + day.total, 0)),
       "See TER",
       project.fundCode,
@@ -1655,4 +1652,5 @@ module.exports = {
   buildPaymentVoucherPdf,
   buildEmptyTravelExpenseReportPdf,
   getVoucherExpenseDescription,
+  buildVoucherDailySummary,
 };
