@@ -462,6 +462,42 @@ async function previewReimbursement(req, res) {
     (total, item) => total + Number(item.amount.toString()),
     0
   );
+  const previewAttachments = req.body.previewAttachments || [];
+  const uploadedPreviewFiles = req.files || [];
+  if (previewAttachments.length !== uploadedPreviewFiles.length) {
+    throw new HttpError(400, "Preview attachment details did not match the selected files");
+  }
+  const budgetHolderIsLineManager =
+    String(budgetHolder._id) === String(lineManager._id);
+  const expenseDocuments = uploadedPreviewFiles.flatMap((file, index) => {
+    const metadata = previewAttachments[index];
+    if (
+      !metadata ||
+      !["receipt_ticket", "expense_document", "back_to_office", "terms_of_reference", "other"].includes(metadata.documentType) ||
+      !["financial", "line_manager", "supervisor"].includes(metadata.category)
+    ) {
+      throw new HttpError(400, "A selected preview document has invalid routing details");
+    }
+    const belongsInMergedPackage =
+      metadata.category === "financial" ||
+      (budgetHolderIsLineManager && metadata.category === "line_manager");
+    if (!belongsInMergedPackage) return [];
+    if (!["application/pdf", "image/jpeg", "image/png"].includes(file.mimetype)) {
+      throw new HttpError(400, "Only PDF, JPEG, and PNG uploads can be included in the merged preview");
+    }
+    return [{
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+      documentType: metadata.documentType,
+    }];
+  }).sort((left, right) => {
+    const priority = (attachment) => {
+      if (attachment.documentType === "receipt_ticket") return 0;
+      if (attachment.documentType === "expense_document") return 1;
+      return 2;
+    };
+    return priority(left) - priority(right);
+  });
   await buildReimbursementPdf(res, {
     _id: "preview",
     travelRequest,
@@ -485,7 +521,7 @@ async function previewReimbursement(req, res) {
     totalAmountKsh,
     submittedAt: new Date(),
     status: "DRAFT",
-  });
+  }, expenseDocuments);
 }
 
 async function getMyReimbursements(req, res) {

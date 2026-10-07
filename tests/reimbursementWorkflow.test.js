@@ -265,6 +265,31 @@ describe("reimbursement workflow", () => {
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
     expect(await getPdfPageCount(preview.body)).toBe(3);
 
+    const receiptPdf = await TestPDFDocument.create();
+    receiptPdf.addPage([321, 456]);
+    const previewWithReceipt = await request(app)
+      .post("/api/reimbursements/preview")
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("payload", JSON.stringify(buildReimbursementPayload(
+        travelRequestId,
+        manager._id,
+        { supervisorId: "" }
+      )))
+      .field("previewAttachments", JSON.stringify([
+        { documentType: "receipt_ticket", category: "financial" },
+      ]))
+      .attach("attachments", Buffer.from(await receiptPdf.save()), {
+        filename: "preview-receipt.pdf",
+        contentType: "application/pdf",
+      });
+    expect(previewWithReceipt.status).toBe(200);
+    const previewPdfDocument = await TestPDFDocument.load(previewWithReceipt.body);
+    expect(previewPdfDocument.getPageCount()).toBe(4);
+    expect(previewPdfDocument.getPage(3).getSize()).toMatchObject({
+      width: 321,
+      height: 456,
+    });
+
     const response = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", `Bearer ${requesterToken}`)
