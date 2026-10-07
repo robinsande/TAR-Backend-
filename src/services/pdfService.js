@@ -1032,7 +1032,7 @@ function drawPaymentRequestPage(doc, report) {
       const imageBytes = Buffer.from(value.slice("data:image/png;base64,".length), "base64");
       doc.image(imageBytes, x, y, { fit: [maxWidth, maxHeight] });
     } else if (value) {
-      doc.font("Helvetica-Oblique").fontSize(7).fillColor("#1646a0")
+      doc.font("Helvetica-Oblique").fontSize(maxHeight >= 16 ? 13 : 11).fillColor("#1646a0")
         .text(value, x, y, { width: maxWidth, height: maxHeight, ellipsis: true });
     } else {
       doc.save().strokeColor("#555555").lineWidth(0.5).dash(1, { space: 2 })
@@ -1054,7 +1054,7 @@ function drawPaymentRequestPage(doc, report) {
   field(margin, 435, width * 0.46, "Name of the Supervisor:", report.supervisorId?.name || "Not assigned");
   field(margin + width * 0.46, 435, width * 0.30, "Designation:", report.supervisorId?.position);
   doc.font("Helvetica-Bold").fontSize(6.5).text("Signature:", margin + width * 0.77, 438, { width: 40, height: 9 });
-  signature(report.supervisorSignature || report.supervisorSignedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 12);
+  signature(report.supervisorSignature || report.supervisorSignedName, margin + width * 0.77 + 40, 435, width * 0.23 - 44, 14);
   rule(450);
 
   const approvals = [
@@ -1085,7 +1085,7 @@ function drawPaymentRequestPage(doc, report) {
   approvals.forEach((approval, index) => {
     const x = margin + index * approvalWidth;
     if (index > 0) {
-      doc.moveTo(x, approvalY).lineTo(x, 498).strokeColor("#cccccc").lineWidth(0.5).stroke();
+      doc.moveTo(x, approvalY).lineTo(x, 512).strokeColor("#cccccc").lineWidth(0.5).stroke();
     }
     doc.font("Helvetica-Bold").fontSize(6.5).text(approval.title, x + 4, approvalY, { width: approvalWidth - 8, height: 9 });
     doc.font("Helvetica").fontSize(6).text(`Name: ${dash(approval.name)}`, x + 4, approvalY + 9, {
@@ -1099,34 +1099,34 @@ function drawPaymentRequestPage(doc, report) {
       ellipsis: true,
     });
     doc.font("Helvetica-Bold").text("Signature:", x + 4, approvalY + 28, { width: 38, height: 8 });
-    signature(approval.signature, x + 44, approvalY + 27, approvalWidth - 52, 10);
-    doc.font("Helvetica").fontSize(6).text(`Date: ${dash(approval.date)}`, x + 4, approvalY + 39, {
+    signature(approval.signature, x + 44, approvalY + 27, approvalWidth - 52, 18);
+    doc.font("Helvetica").fontSize(6).text(`Date: ${dash(approval.date)}`, x + 4, approvalY + 48, {
       width: approvalWidth - 8,
       height: 8,
       ellipsis: true,
     });
   });
-  rule(500);
+  rule(512);
   doc.font("Helvetica-Bold").fontSize(6.2).text(
     "Acknowledgement of receipt of payment:",
     margin + 4,
-    504,
+    516,
     { width: approvalWidth, height: 8 }
   );
   doc.font("Helvetica").fontSize(6).text(
     "Name: ................................................  Designation: ................................................  Signature: ................................................",
     margin + 4,
-    514,
+    526,
     { width: approvalWidth - 8, height: 22, ellipsis: true }
   );
   doc.font("Helvetica").fontSize(6).text(
     `Employee (SA) Number: ${dash(report.employeeNumber || submitter.employeeNumber)}    Date: ........................................`,
     margin + approvalWidth + 4,
-    514,
+    526,
     { width: approvalWidth * 2 - 8, height: 10, ellipsis: true }
   );
-  rule(539);
-  doc.y = Math.min(540, pageHeight - margin);
+  rule(551);
+  doc.y = Math.min(552, pageHeight - margin);
 }
 
 function getVoucherExpenseDescription(destination) {
