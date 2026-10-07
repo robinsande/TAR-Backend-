@@ -855,7 +855,15 @@ async function downloadReimbursementPdf(req, res) {
   const expenseDocuments = await Promise.all(
     (response.attachments || [])
       .filter((attachment) =>
-        hasOtherExpenses && attachment.documentType === "expense_document"
+        attachment.documentType === "receipt_ticket" ||
+        (hasOtherExpenses && attachment.documentType === "expense_document")
+      )
+      .filter((attachment) =>
+        ["application/pdf", "image/jpeg", "image/png"].includes(attachment.mimeType)
+      )
+      .sort((left, right) =>
+        Number(left.documentType !== "receipt_ticket") -
+        Number(right.documentType !== "receipt_ticket")
       )
       .map(async (attachment) => ({
         buffer: await getAttachmentBuffer(attachment.storageId),
@@ -914,10 +922,10 @@ async function uploadReimbursementAttachment(req, res) {
     throw new HttpError(400, "Upload a PDF, image, Word document, or Excel document");
   }
   if (
-    documentType === "expense_document" &&
+    ["receipt_ticket", "expense_document"].includes(documentType) &&
     !["application/pdf", "image/jpeg", "image/png"].includes(req.file.mimetype)
   ) {
-    throw new HttpError(400, "Expense documents added to the merged PDF must be PDF, JPEG, or PNG files");
+    throw new HttpError(400, "Receipts and expense documents added to the merged PDF must be PDF, JPEG, or PNG files");
   }
 
   const storageId = await storeAttachment(req.file, {

@@ -10,6 +10,7 @@ const { PDFDocument: TestPDFDocument } = require("pdf-lib");
 const createApp = require("../src/app");
 const {
   buildVoucherDailySummary,
+  buildTerDayBuckets,
   getVoucherExpenseDescription,
 } = require("../src/services/pdfService");
 const User = require("../src/models/User");
@@ -1414,6 +1415,30 @@ describe("reimbursement workflow", () => {
       "ACT1",
       "DEPT1",
     ]);
+    for (const [categories, expectedTotal] of [
+      [["BREAKFAST", "LUNCH"], 2000],
+      [["LUNCH", "DINNER"], 2500],
+      [["BREAKFAST"], 1000],
+    ]) {
+      const partialMealItems = categories.map((category, index) => ({
+        expenseDate: "2026-07-02T00:00:00.000Z",
+        location: "Dadaab",
+        category,
+        amount: category === "DINNER" ? 1500 : 1000,
+        invoiceNumber: `MEAL-${index + 1}`,
+      }));
+      const dailyBuckets = buildTerDayBuckets(partialMealItems);
+      expect(dailyBuckets).toHaveLength(1);
+      expect(buildVoucherDailySummary(dailyBuckets[0], "Dadaab", {
+        fundCode: "FUND1",
+        projectId: "PROJECT1",
+        activityId: "ACT1",
+        departmentId: "DEPT1",
+      }, "PS-ACCOUNT-001")[2]).toBe(expectedTotal.toLocaleString("en-KE", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }));
+    }
     const voucherPdf = await request(app)
       .get(`/api/reimbursements/${accepted.body._id}/payment-voucher.pdf`)
       .set("Authorization", "Bearer " + requesterToken);
@@ -1462,11 +1487,13 @@ describe("reimbursement workflow", () => {
       }));
     expect(created.body.peopleSoftAccount).toBe("PS-ACCOUNT-001");
 
+    const receiptPdf = await TestPDFDocument.create();
+    receiptPdf.addPage([321, 456]);
     const receipt = await request(app)
       .post(`/api/reimbursements/${created.body._id}/attachments`)
       .set("Authorization", "Bearer " + requesterToken)
       .field("documentType", "receipt_ticket")
-      .attach("file", Buffer.from("receipt"), {
+      .attach("file", Buffer.from(await receiptPdf.save()), {
         filename: "receipt.pdf",
         contentType: "application/pdf",
       });
@@ -1531,7 +1558,12 @@ describe("reimbursement workflow", () => {
       .get(`/api/reimbursements/${created.body._id}/pdf`)
       .set("Authorization", "Bearer " + requesterToken);
     expect(mergedPdf.status).toBe(200);
-    expect(await getPdfPageCount(mergedPdf.body)).toBe(5);
+    const mergedPdfDocument = await TestPDFDocument.load(mergedPdf.body);
+    expect(mergedPdfDocument.getPageCount()).toBe(6);
+    expect(mergedPdfDocument.getPage(3).getSize()).toMatchObject({
+      width: 321,
+      height: 456,
+    });
 
     const lineManagerToken = await login(manager.email);
     const lineManagerPreview = await request(app)

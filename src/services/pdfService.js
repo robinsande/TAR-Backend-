@@ -334,7 +334,7 @@ function drawTarGrid(doc, rows, options = {}) {
           doc
             .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
             .fontSize(cell.size || 9)
-            .fillColor(cell.color || "#000000")
+            .fillColor(cell.color || (cell.bold ? "#000000" : "#0000FF"))
             .text(dash(cell.value), x + padding, y + padding, {
               width: width - padding * 2,
               height: 12,
@@ -372,7 +372,7 @@ function drawTarGrid(doc, rows, options = {}) {
         doc
           .font(cell.bold ? "Helvetica-Bold" : "Helvetica")
           .fontSize(cell.size || 9)
-          .fillColor(cell.color || "#000000")
+          .fillColor(cell.color || (cell.bold ? "#000000" : "#0000FF"))
           .text(dash(cell.value), x + padding, y + padding, {
             width: width - padding * 2,
             height: rowHeight - padding * 2,
@@ -1143,10 +1143,14 @@ function getVoucherExpenseDescription(destination) {
 function buildVoucherDailySummary(day, destination, project, peopleSoftAccount) {
   const items = day.items || [];
   const invoiceNumbers = [...new Set(items.map((item) => item.invoiceNumber).filter(Boolean))];
+  const dayTotal = Object.values(day.amounts || {}).reduce(
+    (sum, amount) => sum + Number(amount || 0),
+    0
+  );
   return [
     day.date ? formatDate(day.date) : "—",
     getVoucherExpenseDescription(destination),
-    formatCurrency(items.reduce((sum, item) => sum + Number(item.amount || 0), 0)),
+    formatCurrency(dayTotal),
     invoiceNumbers.length > 1 ? `${invoiceNumbers.length} invoices` : invoiceNumbers[0] || "",
     peopleSoftAccount || "",
     project.fundCode,
@@ -1767,4 +1771,5 @@ module.exports = {
   buildEmptyTravelExpenseReportPdf,
   getVoucherExpenseDescription,
   buildVoucherDailySummary,
+  buildTerDayBuckets,
 };
