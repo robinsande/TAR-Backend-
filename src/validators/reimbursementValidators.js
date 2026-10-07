@@ -9,8 +9,9 @@ const selectedSupervisorValidator = body("supervisorId")
 const reimbursementHeaderValidators = [
   selectedSupervisorValidator,
   body("financeAdminId")
+    .optional({ values: "falsy" })
     .isMongoId()
-    .withMessage("A valid Finance Admin is required"),
+    .withMessage("Select a valid Finance Admin"),
   body("financeCcAdminId")
     .optional({ values: "falsy" })
     .isMongoId()
@@ -35,6 +36,10 @@ const reimbursementHeaderValidators = [
     .trim()
     .notEmpty()
     .withMessage("Payment Request purpose is required"),
+  body("peopleSoftFundCode").optional().isString().isLength({ max: 80 }),
+  body("peopleSoftProjectId").optional().isString().isLength({ max: 80 }),
+  body("peopleSoftActivityId").optional().isString().isLength({ max: 80 }),
+  body("peopleSoftDepartmentId").optional().isString().isLength({ max: 80 }),
   body("paymentDetails.paymentMethod")
     .equals("mpesa")
     .withMessage("M-PESA is the supported reimbursement payment method"),

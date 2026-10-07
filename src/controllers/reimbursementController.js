@@ -333,25 +333,13 @@ async function createReimbursement(req, res) {
     travelRequest.passengers
   );
   const supervisor = await resolveOptionalSupervisor(
-    req.body.supervisorId,
-    submitter,
-    budgetHolder,
-    travelRequest.passengers,
-    lineManager
+  req.body.supervisorId,
+  submitter,
+  budgetHolder,
+  travelRequest.passengers,
+  lineManager
   );
 
-  const financeAdmin = await User.findOne({
-    _id: req.body.financeAdminId,
-    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
-    isActive: true,
-  });
-  if (!financeAdmin) {
-    throw new HttpError(400, "Select an active Finance Admin");
-  }
-  const financeCcAdmin = await resolveOptionalFinanceCcAdmin(
-    req.body.financeCcAdminId,
-    financeAdmin
-  );
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
   const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
@@ -370,7 +358,8 @@ async function createReimbursement(req, res) {
         {
           ...req.body,
           travelRequestId: travelRequest._id,
-          financeCcAdminId: financeCcAdmin?._id || null,
+          financeAdminId: null,
+          financeCcAdminId: null,
           requesterSignedName,
           requesterSignature,
           peopleSoftAccount,
@@ -431,22 +420,13 @@ async function previewReimbursement(req, res) {
     submitter,
     travelRequest.passengers
   );
-  const [supervisor, financeAdmin, financeCcAdmin] = await Promise.all([
-    resolveOptionalSupervisor(
+  const supervisor = await resolveOptionalSupervisor(
       req.body.supervisorId,
       submitter,
       budgetHolder,
       travelRequest.passengers,
       lineManager
-    ),
-    User.findOne({
-      _id: req.body.financeAdminId,
-      $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
-      isActive: true,
-    }),
-    resolveOptionalFinanceCcAdmin(req.body.financeCcAdminId, req.body.financeAdminId),
-  ]);
-  if (!financeAdmin) throw new HttpError(400, "Select an active Finance Admin");
+    );
 
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
@@ -505,8 +485,8 @@ async function previewReimbursement(req, res) {
     selected_approver_id: budgetHolder,
     supervisorId: supervisor,
     lineManagerId: lineManager,
-    financeAdminId: financeAdmin,
-    financeCcAdminId: req.body.financeCcAdminId || null,
+    financeAdminId: null,
+    financeCcAdminId: null,
     requesterSignedName,
     requesterSignedAt: new Date(),
     requesterSignature,
@@ -516,6 +496,10 @@ async function previewReimbursement(req, res) {
     baseLocation: req.body.baseLocation,
     paymentRequestPurpose: req.body.paymentRequestPurpose,
     peopleSoftAccount,
+    peopleSoftFundCode: String(req.body.peopleSoftFundCode || "").trim(),
+    peopleSoftProjectId: String(req.body.peopleSoftProjectId || "").trim(),
+    peopleSoftActivityId: String(req.body.peopleSoftActivityId || "").trim(),
+    peopleSoftDepartmentId: String(req.body.peopleSoftDepartmentId || "").trim(),
     paymentDetails: req.body.paymentDetails,
     lineItems,
     totalAmountKsh,
@@ -663,18 +647,6 @@ async function updateReimbursement(req, res) {
     travelRequest.passengers,
     lineManager
   );
-  const financeAdmin = await User.findOne({
-    _id: req.body.financeAdminId,
-    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
-    isActive: true,
-  });
-  if (!financeAdmin) {
-    throw new HttpError(400, "Select an active Finance Admin");
-  }
-  const financeCcAdmin = await resolveOptionalFinanceCcAdmin(
-    req.body.financeCcAdminId,
-    financeAdmin
-  );
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, req.currentUser);
   const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
@@ -699,13 +671,17 @@ async function updateReimbursement(req, res) {
   report.lineManagerId = lineManager._id;
   report.selected_approver_id = budgetHolder._id;
   report.travelRequest = travelRequest._id;
-  report.financeAdminId = financeAdmin._id;
-  report.financeCcAdminId = financeCcAdmin?._id || null;
+  report.financeAdminId = null;
+  report.financeCcAdminId = null;
   report.requesterSignedName = requesterSignedName;
   report.requesterSignedAt = new Date();
   report.requesterSignature = requesterSignature;
   report.paymentRequestPurpose = req.body.paymentRequestPurpose;
   report.peopleSoftAccount = peopleSoftAccount;
+  report.peopleSoftFundCode = String(req.body.peopleSoftFundCode || "").trim();
+  report.peopleSoftProjectId = String(req.body.peopleSoftProjectId || "").trim();
+  report.peopleSoftActivityId = String(req.body.peopleSoftActivityId || "").trim();
+  report.peopleSoftDepartmentId = String(req.body.peopleSoftDepartmentId || "").trim();
   report.paymentDetails = req.body.paymentDetails || {};
   report.supervisorSignedName = null;
   report.supervisorSignature = null;
@@ -813,11 +789,11 @@ async function updateReimbursementStatus(req, res) {
       req.currentUser?.name || req.user.name;
     report[`${acknowledgementPrefix}AcknowledgementSignature`] = signature;
     if (isLineManagerCopy) {
-      report.status = "SUBMITTED_TO_FINANCE";
+      report.status = "APPROVED_FOR_FINANCE_SUBMISSION";
       addApprovalHistory(report, req, {
         level: "SYSTEM",
-        action: "SUBMITTED_TO_FINANCE",
-        resultingStatus: "SUBMITTED_TO_FINANCE",
+        action: "APPROVED_FOR_FINANCE_SUBMISSION",
+        resultingStatus: "APPROVED_FOR_FINANCE_SUBMISSION",
       });
     }
     addApprovalHistory(report, req, {
@@ -836,10 +812,6 @@ async function updateReimbursementStatus(req, res) {
     const response = await buildReimbursementResponse(report._id);
     response.attachments = visibleAttachments(response, req.user);
     if (isLineManagerCopy) {
-      const financeStage = APPROVAL_STAGES.SUBMITTED_TO_FINANCE;
-      for (const recipient of await stageRecipients(financeStage, response)) {
-        await notifyReimbursementUser(recipient, "reimbursement_submitted", response);
-      }
       await notifyReimbursementUser(response.submittedBy, "reimbursement_approved", response);
     }
     return res.json(response);
@@ -923,7 +895,12 @@ async function updateReimbursementStatus(req, res) {
           const budgetHolderId = String(report.selected_approver_id || "");
           const lineManagerId = String(report.lineManagerId || "");
           if (!lineManagerId || lineManagerId === budgetHolderId) {
-            report.status = "SUBMITTED_TO_FINANCE";
+            report.status = "APPROVED_FOR_FINANCE_SUBMISSION";
+            addApprovalHistory(report, req, {
+              level: "SYSTEM",
+              action: "APPROVED_FOR_FINANCE_SUBMISSION",
+              resultingStatus: "APPROVED_FOR_FINANCE_SUBMISSION",
+            });
           }
         }
         if (stage.level === "FINANCE_ADMIN") {
@@ -1025,7 +1002,9 @@ async function updateReimbursementStatus(req, res) {
     if (report.status === "PAYMENT_PROCESSING" && response.financeCcAdminId) {
       await notifyReimbursementUser(response.financeCcAdminId, "reimbursement_cc", response);
     }
-    await notifyReimbursementUser(submitter, "reimbursement_approved", response);
+    if (report.status !== "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT") {
+      await notifyReimbursementUser(submitter, "reimbursement_approved", response);
+    }
   }
 
   response.attachments = visibleAttachments(response, req.user);

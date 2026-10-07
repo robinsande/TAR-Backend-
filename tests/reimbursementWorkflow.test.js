@@ -260,7 +260,13 @@ describe("reimbursement workflow", () => {
     const preview = await request(app)
       .post("/api/reimbursements/preview")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
+      .send(buildReimbursementPayload(travelRequestId, manager._id, {
+        supervisorId: "",
+        peopleSoftFundCode: "CUSTOM-FUND",
+        peopleSoftProjectId: "CUSTOM-PROJECT",
+        peopleSoftActivityId: "CUSTOM-ACTIVITY",
+        peopleSoftDepartmentId: "CUSTOM-DEPARTMENT",
+      }));
     expect(preview.status).toBe(200);
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
     expect(await getPdfPageCount(preview.body)).toBe(3);
@@ -293,7 +299,13 @@ describe("reimbursement workflow", () => {
     const response = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
+      .send(buildReimbursementPayload(travelRequestId, manager._id, {
+        supervisorId: "",
+        peopleSoftFundCode: "CUSTOM-FUND",
+        peopleSoftProjectId: "CUSTOM-PROJECT",
+        peopleSoftActivityId: "CUSTOM-ACTIVITY",
+        peopleSoftDepartmentId: "CUSTOM-DEPARTMENT",
+      }));
     expect(response.status).toBe(201);
     expect(response.body.status).toBe("SUBMITTED_TO_BUDGET_HOLDER");
     expect(response.body.selected_approver_id._id).toBe(
@@ -319,7 +331,11 @@ describe("reimbursement workflow", () => {
       activityId: "3",
       departmentId: "KE0201",
     });
-    expect(response.body.financeAdminId._id).toBe(defaultFinanceAdminId.toString());
+    expect(response.body.financeAdminId).toBeNull();
+    expect(response.body.peopleSoftFundCode).toBe("CUSTOM-FUND");
+    expect(response.body.peopleSoftProjectId).toBe("CUSTOM-PROJECT");
+    expect(response.body.peopleSoftActivityId).toBe("CUSTOM-ACTIVITY");
+    expect(response.body.peopleSoftDepartmentId).toBe("CUSTOM-DEPARTMENT");
     expect(response.body.requesterSignedName).toBe(requester.name);
   });
 
@@ -377,7 +393,7 @@ describe("reimbursement workflow", () => {
     expect((template.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || [])).toHaveLength(1);
   });
 
-  it("rejects a reimbursement with a mismatched requester signature or unassigned Finance Admin", async () => {
+  it("rejects a mismatched requester signature without requiring Finance routing", async () => {
     const manager = await createUser({
       name: "Manager Admin",
       email: "manager-signature@example.com",
@@ -399,19 +415,20 @@ describe("reimbursement workflow", () => {
           requesterSignature: "Someone Else",
         })
       );
-    const invalidFinanceAdmin = await request(app)
+    const noFinanceSelection = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
       .send(
         buildReimbursementPayload(travelRequestId, manager._id, {
-          financeAdminId: new mongoose.Types.ObjectId(),
+          financeAdminId: "",
         })
       );
 
     expect(invalidSignature.status).toBe(400);
     expect(invalidSignature.body.message).toMatch(/account name|drawn signature/i);
-    expect(invalidFinanceAdmin.status).toBe(400);
-    expect(invalidFinanceAdmin.body.message).toMatch(/active Finance Admin/i);
+    expect(noFinanceSelection.status).toBe(201);
+    expect(noFinanceSelection.body.financeAdminId).toBeNull();
+    expect(noFinanceSelection.body.financeCcAdminId).toBeNull();
   });
 
   it("requires M-PESA as the payment method and a mobile number", async () => {
@@ -930,8 +947,7 @@ describe("reimbursement workflow", () => {
     expect(reimbursementDetail.body.approvalHistory[0].performedBy.name).toBe(requester.name);
     expect(reimbursementDetail.body.attachments).toHaveLength(4);
     expect(budgetHolderDetail.body.attachments.map((attachment) => attachment.documentType)).toEqual(["receipt_ticket"]);
-    expect(financeDetail.status).toBe(200);
-    expect(financeDetail.body.attachments.map((attachment) => attachment.documentType)).toEqual(["receipt_ticket"]);
+    expect(financeDetail.status).toBe(403);
     expect(lineManagerDetail.body.attachments.map((attachment) => attachment.category)).toEqual(
       expect.arrayContaining(["line_manager", "line_manager"])
     );
@@ -1188,7 +1204,55 @@ describe("reimbursement workflow", () => {
     expect(response.status).toBe(403);
   });
 
-  it("enforces supervisor, Budget Holder, Line Manager acknowledgement, and Finance in sequence", async () => {
+  it("finishes in the approved handoff state when the Budget Holder is also the Line Manager", async () => {
+    const manager = await createUser({
+      name: "Combined Approver",
+      email: "combined-approver@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester",
+      email: "combined-approver-requester@example.com",
+      managerId: manager._id,
+    });
+    const travelRequestId = await createApprovedTravelRequest(manager, requester);
+    await BudgetHolder.findByIdAndUpdate(defaultBudgetHolderId, {
+      user: manager._id,
+      name: manager.name,
+      email: manager.email,
+    });
+    const requesterToken = await login(requester.email);
+    const managerToken = await login(manager.email);
+    const created = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildReimbursementPayload(travelRequestId, manager._id, {
+        supervisorId: "",
+        financeAdminId: "",
+      }));
+    expect(created.status).toBe(201);
+    expect(created.body.selected_approver_id._id).toBe(manager._id.toString());
+    expect(created.body.lineManagerId._id).toBe(manager._id.toString());
+    expect(created.body.financeAdminId).toBeNull();
+
+    const review = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ status: "review_started" });
+    expect(review.body.status).toBe("BUDGET_HOLDER_REVIEW");
+    const approval = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ status: "approved" });
+    expect(approval.body.status).toBe("APPROVED_FOR_FINANCE_SUBMISSION");
+    expect(approval.body.lineManagerAcknowledgedAt).toBeNull();
+    const packageDownload = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/pdf`)
+      .set("Authorization", "Bearer " + requesterToken);
+    expect(packageDownload.status).toBe(200);
+  }, 20000);
+
+  it("requires Supervisor, Budget Holder, and Line Manager acknowledgement before Finance handoff", async () => {
     const manager = await createUser({
       name: "Line Manager",
       email: "line-manager@example.com",
@@ -1291,14 +1355,20 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + managerToken)
       .send({ status: "acknowledged", signature: testRequesterSignature });
     expect(lineManagerAcknowledgement.status).toBe(200);
-    expect(lineManagerAcknowledgement.body.status).toBe("SUBMITTED_TO_FINANCE");
+    expect(lineManagerAcknowledgement.body.status).toBe("APPROVED_FOR_FINANCE_SUBMISSION");
     expect(lineManagerAcknowledgement.body.lineManagerAcknowledgedName).toBe(manager.name);
     const financeNotification = await Notification.findOne({
       recipient: finance._id,
       reimbursement: created.body._id,
       type: "reimbursement_submitted",
     });
-    expect(financeNotification).toBeTruthy();
+    expect(financeNotification).toBeNull();
+    const requesterApprovalNotification = await Notification.findOne({
+      recipient: requester._id,
+      reimbursement: created.body._id,
+      type: "reimbursement_approved",
+    });
+    expect(requesterApprovalNotification.message).toMatch(/download the merged reimbursement package/i);
 
     const financeCcAccess = await request(app)
       .get(`/api/reimbursements/${created.body._id}`)
@@ -1326,54 +1396,7 @@ describe("reimbursement workflow", () => {
     expect(unassignedFinanceAccess.status).toBe(403);
     expect(unassignedFinanceApproval.status).toBe(403);
 
-    const financeReview = await request(app)
-      .patch(`/api/reimbursements/${created.body._id}/status`)
-      .set("Authorization", "Bearer " + financeToken)
-      .send({ status: "review_started" });
-    expect(financeReview.body.status).toBe("FINANCE_REVIEW");
-    const financeDetail = await request(app)
-      .get(`/api/reimbursements/${created.body._id}`)
-      .set("Authorization", "Bearer " + financeToken);
-    expect(financeDetail.status).toBe(200);
 
-    const financeApproval = await request(app)
-      .patch(`/api/reimbursements/${created.body._id}/status`)
-      .set("Authorization", "Bearer " + financeToken)
-      .send({ status: "approved", signature: testRequesterSignature });
-    expect(financeApproval.body.status).toBe("PAYMENT_PROCESSING");
-    expect(financeApproval.body.financeSignedName).toBe(finance.name);
-    expect(financeApproval.body.financeSignature).toBe(testRequesterSignature);
-    const financeCcAcknowledgement = await request(app)
-      .patch(`/api/reimbursements/${created.body._id}/status`)
-      .set("Authorization", "Bearer " + financeCcToken)
-      .send({ status: "acknowledged", signature: testRequesterSignature });
-    expect(financeCcAcknowledgement.status).toBe(200);
-    expect(financeCcAcknowledgement.body.financeCcAcknowledgedName).toBe(financeCc.name);
-    const financeCcNotification = await Notification.findOne({
-      recipient: financeCc._id,
-      reimbursement: created.body._id,
-      type: "reimbursement_cc",
-    });
-    expect(financeCcNotification.message).toMatch(/acknowledgement/i);
-    expect(financeCcNotification.message).toMatch(/payment is now being processed/i);
-
-    const completed = await request(app)
-      .patch(`/api/reimbursements/${created.body._id}/status`)
-      .set("Authorization", "Bearer " + financeToken)
-      .send({ status: "completed" });
-    expect(completed.body).toMatchObject({ status: "COMPLETED" });
-    expect(completed.body.approvalHistory.map((entry) => entry.resultingStatus)).toEqual(
-      expect.arrayContaining([
-        "SUPERVISOR_APPROVED",
-        "SUPERVISOR_REVIEW",
-        "BUDGET_HOLDER_REVIEW",
-        "FINANCE_REVIEW",
-        "BUDGET_HOLDER_APPROVED",
-        "SUBMITTED_TO_FINANCE",
-        "PAYMENT_PROCESSING",
-        "COMPLETED",
-      ])
-    );
   }, 20000);
 
   it("requires a distinct Supervisor approval before the TAR Line Manager approval", async () => {

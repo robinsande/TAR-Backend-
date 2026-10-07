@@ -50,14 +50,17 @@ async function createAndSendNotification({
 
   const frontendUrl = require("../config/env").frontendUrl.replace(/\/+$/, "");
   const isReimbursementCopy = type === "reimbursement_cc";
+  const isReimbursementRequesterApproval = type === "reimbursement_approved";
   const approvalUrl = reimbursementId
-    ? isReimbursementCopy
+    ? isReimbursementCopy || isReimbursementRequesterApproval
       ? `${frontendUrl}/reimbursement-detail.html?id=${encodeURIComponent(reimbursementId)}`
       : `${frontendUrl}/reimbursement-approvals.html`
     : getApprovalsUrl();
   const linkLabel = isReimbursementCopy
     ? "Open reimbursement details"
-    : "Open the CARE TAR approvals page";
+    : isReimbursementRequesterApproval
+      ? "Open reimbursement details"
+      : "Open the CARE TAR approvals page";
   const html = buildNotificationEmail(
     recipient.name,
     message,
@@ -228,6 +231,12 @@ function buildReimbursementNotificationContent(type, report) {
         message: `A reimbursement request for ${destination} totaling KES ${amount} was edited and resubmitted for your review.`,
       };
     case "reimbursement_approved":
+      if (report.status === "APPROVED_FOR_FINANCE_SUBMISSION") {
+        return {
+          subject: "Reimbursement approved — ready to send to Finance",
+          message: `Your reimbursement request for ${destination} totaling KES ${amount} has completed its in-system approvals. Download the merged reimbursement package from the system and email it to Finance for payment processing.`,
+        };
+      }
       if (report.status === "SUBMITTED_TO_BUDGET_HOLDER") {
         return {
           subject: "Reimbursement approved by Supervisor",

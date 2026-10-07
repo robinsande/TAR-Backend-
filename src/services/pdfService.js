@@ -808,7 +808,13 @@ function buildTravelRequestsPdf(res, requestDocuments) {
 
 function drawPaymentRequestPage(doc, report) {
   const travel = report.travelRequest || {};
-  const project = travel.project || {};
+  const project = {
+    ...(travel.project || {}),
+    fundCode: report.peopleSoftFundCode ?? travel.project?.fundCode,
+    projectId: report.peopleSoftProjectId ?? travel.project?.projectId,
+    activityId: report.peopleSoftActivityId ?? travel.project?.activityId,
+    departmentId: report.peopleSoftDepartmentId ?? travel.project?.departmentId,
+  };
   const submitter = report.submittedBy || {};
   const total = Number(report.totalAmountKsh || 0);
   const paymentDetails = report.paymentDetails || {};

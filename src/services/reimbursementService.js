@@ -106,10 +106,14 @@ function buildReimbursementDraftData(
     selected_approver_id: budgetHolderId || lineManagerId,
     supervisorId,
     lineManagerId,
-    financeAdminId: payload.financeAdminId,
-    financeCcAdminId: payload.financeCcAdminId || null,
+    financeAdminId: null,
+    financeCcAdminId: null,
     paymentRequestPurpose: payload.paymentRequestPurpose,
     peopleSoftAccount: String(payload.peopleSoftAccount || "").trim(),
+    peopleSoftFundCode: String(payload.peopleSoftFundCode || "").trim(),
+    peopleSoftProjectId: String(payload.peopleSoftProjectId || "").trim(),
+    peopleSoftActivityId: String(payload.peopleSoftActivityId || "").trim(),
+    peopleSoftDepartmentId: String(payload.peopleSoftDepartmentId || "").trim(),
     paymentDetails: payload.paymentDetails || {},
     requesterSignedName: payload.requesterSignedName,
     requesterSignedAt: new Date(),
@@ -148,6 +152,10 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
     financeCcAdminId: report.financeCcAdminId,
     paymentRequestPurpose: report.paymentRequestPurpose,
     peopleSoftAccount: report.peopleSoftAccount,
+    peopleSoftFundCode: report.peopleSoftFundCode,
+    peopleSoftProjectId: report.peopleSoftProjectId,
+    peopleSoftActivityId: report.peopleSoftActivityId,
+    peopleSoftDepartmentId: report.peopleSoftDepartmentId,
     paymentDetails: report.paymentDetails,
     employeeNumber: report.employeeNumber,
     department: report.department,
@@ -180,6 +188,10 @@ function applyReimbursementResubmission(report, payload, supervisorId) {
   report.position = payload.position || report.position;
   report.baseLocation = payload.baseLocation;
   report.peopleSoftAccount = String(payload.peopleSoftAccount || "").trim();
+  report.peopleSoftFundCode = String(payload.peopleSoftFundCode || "").trim();
+  report.peopleSoftProjectId = String(payload.peopleSoftProjectId || "").trim();
+  report.peopleSoftActivityId = String(payload.peopleSoftActivityId || "").trim();
+  report.peopleSoftDepartmentId = String(payload.peopleSoftDepartmentId || "").trim();
   report.version += 1;
   report.status = supervisorId
     ? "SUBMITTED_TO_SUPERVISOR"
