@@ -46,6 +46,10 @@ async function buildRequestScope(user, listScope) {
   const personal = buildPersonalRequestScope(user.id);
   const normalized = String(listScope || "").toLowerCase();
 
+  if (user.roles?.includes("auditor")) {
+    return {};
+  }
+
   if (user.role === "super_superadmin") {
     return { status: "approved", "modeOfTravel.aircraft": true };
   }
@@ -87,6 +91,10 @@ async function canAccessRequest(user, request) {
   }
 
   if (user.role === "superadmin") {
+    return true;
+  }
+
+  if (user.roles?.includes("auditor")) {
     return true;
   }
 

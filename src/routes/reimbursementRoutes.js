@@ -2,6 +2,7 @@ const express = require("express");
 const asyncHandler = require("../utils/asyncHandler");
 const { authenticate, requireRole } = require("../middleware/authMiddleware");
 const { validationErrorHandler } = require("../middleware/errorHandler");
+const { uploadRequestAttachments } = require("../middleware/requestUpload");
 const {
   createReimbursementValidator,
   updateReimbursementValidator,
@@ -16,6 +17,8 @@ const {
   updateReimbursement,
   updateReimbursementStatus,
   downloadReimbursementPdf,
+  uploadReimbursementAttachment,
+  downloadReimbursementAttachment,
   getExpenseCategories,
 } = require("../controllers/reimbursementController");
 
@@ -24,13 +27,21 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get("/expense-categories", asyncHandler(getExpenseCategories));
+router.get("/template/ter.pdf", asyncHandler((req, res) => {
+  const { buildEmptyTravelExpenseReportPdf } = require("../services/pdfService");
+  buildEmptyTravelExpenseReportPdf(res);
+}));
 router.get("/my-requests", asyncHandler(getMyReimbursements));
 router.get(
   "/pending-approvals",
-  requireRole("admin"),
+  requireRole("admin", "approver_budget_holder", "supervisor", "finance_admin"),
   asyncHandler(getPendingApprovals)
 );
-router.get("/team", requireRole("admin"), asyncHandler(getTeamReimbursements));
+router.get(
+  "/team",
+  requireRole("admin", "approver_budget_holder", "supervisor", "finance_admin", "superadmin", "auditor"),
+  asyncHandler(getTeamReimbursements)
+);
 
 router.post(
   "/",
@@ -50,10 +61,19 @@ router.patch(
 
 router.get("/:id", asyncHandler(getReimbursementById));
 router.get("/:id/pdf", asyncHandler(downloadReimbursementPdf));
+router.post(
+  "/:id/attachments",
+  uploadRequestAttachments.single("file"),
+  asyncHandler(uploadReimbursementAttachment)
+);
+router.get(
+  "/:id/attachments/:attachmentId",
+  asyncHandler(downloadReimbursementAttachment)
+);
 
 router.patch(
   "/:id/status",
-  requireRole("admin"),
+  requireRole("admin", "approver_budget_holder", "supervisor", "finance_admin"),
   ...updateReimbursementStatusValidator,
   validationErrorHandler,
   asyncHandler(updateReimbursementStatus)

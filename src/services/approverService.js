@@ -55,9 +55,26 @@ async function getEligibleApproverById(approverId, { excludeUserIds = [] } = {})
   return approver;
 }
 
+async function getEligibleSupervisorById(supervisorId, { excludeUserIds = [] } = {}) {
+  const supervisor = await User.findById(supervisorId).select("-passwordHash");
+  if (!supervisor || !supervisor.isActive) {
+    throw new HttpError(400, "Selected supervisor was not found or is inactive");
+  }
+  if (!(supervisor.roles || []).includes("supervisor")) {
+    throw new HttpError(400, "Selected user does not have the Supervisor role");
+  }
+
+  const excluded = new Set(excludeUserIds.map((id) => String(id)).filter(Boolean));
+  if (excluded.has(supervisor._id.toString())) {
+    throw new HttpError(400, "You cannot select yourself as the reimbursement supervisor");
+  }
+  return supervisor;
+}
+
 module.exports = {
   listEligibleApprovers,
   listApproversForUser,
   getEligibleApproverById,
+  getEligibleSupervisorById,
   resolveManagerApproverForUser,
 };

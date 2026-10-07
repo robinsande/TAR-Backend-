@@ -22,6 +22,12 @@ const updateUserRoleValidator = [
   body("role").isIn(["user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"]).withMessage("Invalid user role"),
 ];
 
+const updateUserRolesValidator = [
+  ...userIdParamValidator,
+  body("roles").isArray().withMessage("Workflow roles must be a list"),
+  body("roles.*").isIn(["supervisor", "finance_admin", "auditor"]).withMessage("Invalid workflow role"),
+];
+
 const updateUserProfileValidator = [
   ...userIdParamValidator,
   body("name").isString().trim().isLength({ min: 1, max: 160 }).withMessage("Name is required"),
@@ -59,6 +65,7 @@ const bulkInviteValidator = [
 module.exports = {
   createUserValidator,
   updateUserRoleValidator,
+  updateUserRolesValidator,
   updateUserProfileValidator,
   resetUserPasswordValidator,
   updateUserStatusValidator,

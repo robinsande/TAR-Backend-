@@ -1,12 +1,12 @@
 const { body } = require("express-validator");
 const { EXPENSE_CATEGORIES } = require("../constants/expenseCategories");
 
-const selectedApproverValidator = body("selected_approver_id")
+const selectedSupervisorValidator = body("supervisorId")
   .isMongoId()
-  .withMessage("A valid selected approver ID is required");
+  .withMessage("A valid supervisor ID is required");
 
 const reimbursementHeaderValidators = [
-  selectedApproverValidator,
+  selectedSupervisorValidator,
   body("baseLocation").isString().notEmpty().withMessage("Base location is required"),
   body("employeeNumber").optional().isString(),
   body("department").optional().isString(),
@@ -14,7 +14,9 @@ const reimbursementHeaderValidators = [
 ];
 
 const reimbursementLineItemValidators = [
-  body("lineItems").isArray({ min: 1 }).withMessage("At least one expense line item is required"),
+  body("lineItems")
+    .isArray({ min: 1, max: 300 })
+    .withMessage("Provide between 1 and 300 expense entries"),
   body("lineItems.*.expenseDate").isISO8601().withMessage("Each line item needs a valid expense date"),
   body("lineItems.*.location").isString().notEmpty().withMessage("Each line item needs a location"),
   body("lineItems.*.category")
@@ -43,11 +45,12 @@ const updateReimbursementValidator = [
 
 const updateReimbursementStatusValidator = [
   body("status")
-    .isIn(["approved", "rejected"])
-    .withMessage("Status must be approved or rejected"),
+    .isIn(["review_started", "approved", "rejected", "completed"])
+    .withMessage("Status must be review_started, approved, rejected, or completed"),
   body("comment")
     .if(body("status").equals("rejected"))
     .isString()
+    .trim()
     .notEmpty()
     .withMessage("Rejection comment is required"),
   body("comment").optional({ values: "null" }).isString(),

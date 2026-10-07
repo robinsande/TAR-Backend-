@@ -23,6 +23,7 @@ function buildAuthUserResponse(user) {
     office: user.office,
     department: user.department,
     role: user.role,
+    roles: user.roles || [],
     managerId: user.managerId,
     isActive: user.isActive,
     mustSetPassword: user.mustSetPassword,

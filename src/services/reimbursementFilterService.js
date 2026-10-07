@@ -11,10 +11,11 @@ function escapeRegex(value) {
  */
 async function buildReimbursementFilters(query, user) {
   const filters = [];
-  const canFilterByPerson = user.role === "admin" || user.role === "superadmin";
+  const canFilterByPerson =
+    ["admin", "superadmin"].includes(user.role) || user.roles?.includes("auditor");
 
   if (query.status) {
-    filters.push({ status: String(query.status).toLowerCase() });
+    filters.push({ status: String(query.status) });
   }
 
   const submittedByEmail = query.submittedByEmail || query.requestedByEmail;

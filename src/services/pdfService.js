@@ -400,10 +400,11 @@ function signatureBlock(doc, columns) {
   doc.fillColor("#000000");
 }
 
-function streamPdf(res, filename, buildContent) {
+function streamPdf(res, filename, buildContent, options = {}) {
   const doc = new PDFDocument({
     margin: PAGE.margin,
     size: "A4",
+    layout: options.layout || "portrait",
     autoFirstPage: true,
     info: {
       Title: filename,
@@ -972,15 +973,239 @@ function drawTravelExpenseReportPage(doc, report) {
   doc.fillColor("#000000");
 }
 
+function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTotal, pageTotal, allTotal) {
+  const pageWidth = doc.page.width;
+  const pageHeight = doc.page.height;
+  const margin = 24;
+  const tableX = margin;
+  const tableWidth = pageWidth - margin * 2;
+  const labelWidth = 112;
+  const totalWidth = 62;
+  const dayWidth = (tableWidth - labelWidth - totalWidth) / 6;
+  const columns = [
+    { x: tableX, width: labelWidth },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      x: tableX + labelWidth + index * dayWidth,
+      width: dayWidth,
+    })),
+    { x: tableX + labelWidth + 6 * dayWidth, width: totalWidth },
+  ];
+  let y = margin;
+
+  const cell = (x, top, width, height, text = "", options = {}) => {
+    doc.save();
+    doc.lineWidth(0.55).strokeColor("#222222");
+    if (options.fill) doc.fillColor(options.fill).rect(x, top, width, height).fillAndStroke();
+    else doc.rect(x, top, width, height).stroke();
+    doc
+      .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(options.size || 7)
+      .fillColor(options.color || "#000000")
+      .text(String(text || ""), x + 3, top + 3, {
+        width: Math.max(1, width - 6),
+        height: height - 5,
+        align: options.align || "left",
+        ellipsis: true,
+      });
+    doc.restore();
+  };
+
+  cell(tableX, y, 82, 30, "CARE", { bold: true, size: 17 });
+  cell(tableX + 82, y, tableWidth - 164, 30, "TRAVEL EXPENSE REPORT [TER]", {
+    bold: true,
+    size: 13,
+    align: "center",
+  });
+  cell(tableX + tableWidth - 82, y, 82, 30, "APPENDIX B", { bold: true, size: 8, align: "center" });
+  y += 30;
+
+  const submitter = report.submittedBy || {};
+  const travel = report.travelRequest || {};
+  const profileRows = [
+    [
+      ["NAME", submitter.name],
+      ["EMPLOYEE NUMBER", report.employeeNumber || submitter.employeeNumber],
+    ],
+    [
+      ["POSITION", report.position || submitter.position],
+      ["DEPARTMENT", report.department || submitter.department],
+    ],
+    [
+      ["TODAY'S DATE", report.submittedAt ? formatDate(report.submittedAt) : ""],
+      ["FIELD / SUB OFFICE", report.baseLocation || submitter.office],
+    ],
+    [
+      ["COUNTRY", travel.country || "Kenya"],
+      ["LOCATION", travel.itinerary?.destination || ""],
+    ],
+  ];
+  for (const row of profileRows) {
+    const colWidth = tableWidth / 2;
+    row.forEach(([label, value], index) => {
+      const x = tableX + index * colWidth;
+      cell(x, y, 105, 15, label, { bold: true, size: 6.5 });
+      cell(x + 105, y, colWidth - 105, 15, value || "", { size: 7.5 });
+    });
+    y += 15;
+  }
+
+  const expenseRows = [
+    ["PER DIEM (M&I)", "PER DIEM (M&I)"],
+    ["BREAKFAST", "BREAKFAST"],
+    ["LUNCH", "LUNCH"],
+    ["DINNER", "DINNER"],
+    ["INCIDENTALS", "INCIDENTALS"],
+    ["HOTEL ROOM & TAXES", "HOTEL ROOM & TAXES"],
+    ["OTHER EXPENSES", "OTHER EXPENSES"],
+    ["AIRPORT TAXES & VISA FEES", "AIRPORT TAXES & VISA FEES"],
+    ["TAXI/LOCAL TRANSPORTATION", "TAXI/LOCAL TRANSPORTATION"],
+    ["VEHICLE FUEL", "VEHICLE FUEL"],
+  ];
+  const dayHeaders = ["DAY", "DATE", "LOCATION", "EX. RATE", "REF", "TIME OF DEPARTURE", "TIME OF ARRIVAL", "ITEM DESCRIPTION"];
+  for (const [index, header] of dayHeaders.entries()) {
+    const rowHeight = index < 5 ? 14 : 16;
+    cell(columns[0].x, y, labelWidth, rowHeight, header, { bold: true, size: 6.5 });
+    days.forEach((day, dayIndex) => {
+      let value = "";
+      if (index === 0 && day?.date) {
+        value = new Date(day.date).toLocaleDateString("en-KE", { weekday: "long" });
+      } else if (index === 1 && day?.date) {
+        value = formatDate(day.date);
+      } else if (index === 2) {
+        value = day?.location || "";
+      }
+      cell(columns[dayIndex + 1].x, y, dayWidth, rowHeight, value, {
+        bold: index < 2,
+        size: 6,
+        align: "center",
+      });
+    });
+    cell(columns[7].x, y, totalWidth, rowHeight, index === 0 ? "TOTALS KSH" : "", {
+      bold: true,
+      size: 6,
+      align: "center",
+    });
+    y += rowHeight;
+  }
+
+  const groupedRows = [
+    { title: "PER DIEM (M&I)", categories: expenseRows.slice(0, 6).map((row) => row[1]) },
+    { title: "OTHER EXPENSES", categories: expenseRows.slice(6).map((row) => row[1]) },
+  ];
+  for (const group of groupedRows) {
+    cell(tableX, y, tableWidth, 15, group.title, { bold: true, fill: "#c8c8c8", size: 7 });
+    y += 15;
+    for (const category of group.categories) {
+      const lineHeight = 15;
+      cell(columns[0].x, y, labelWidth, lineHeight, category, { size: 6.3 });
+      let rowTotal = 0;
+      days.forEach((day, dayIndex) => {
+        const amount = Number(day?.amounts?.[category] || 0);
+        rowTotal += amount;
+        cell(columns[dayIndex + 1].x, y, dayWidth, lineHeight, amount ? formatCurrency(amount) : "", {
+          size: 6.5,
+          align: "right",
+        });
+      });
+      cell(columns[7].x, y, totalWidth, lineHeight, rowTotal ? formatCurrency(rowTotal) : "-", {
+        size: 6.5,
+        align: "right",
+      });
+      y += lineHeight;
+    }
+  }
+
+  cell(columns[0].x, y, labelWidth, 18, "TOTALS FOR EACH DAY", { bold: true, fill: "#c8c8c8", size: 6.5 });
+  days.forEach((day, dayIndex) => {
+    const total = Object.values(day?.amounts || {}).reduce((sum, amount) => sum + Number(amount || 0), 0);
+    cell(columns[dayIndex + 1].x, y, dayWidth, 18, total ? formatCurrency(total) : "-", {
+      bold: true,
+      fill: "#c8c8c8",
+      size: 6.5,
+      align: "right",
+    });
+  });
+  cell(columns[7].x, y, totalWidth, 18, formatCurrency(pageTotal), {
+    bold: true,
+    fill: "#c8c8c8",
+    size: 6.5,
+    align: "right",
+  });
+  y += 18;
+
+  const summaryRows = [
+    ["TOTAL THIS PAGE", formatCurrency(pageTotal)],
+    ["TOTAL PREVIOUS PAGES", formatCurrency(priorTotal)],
+    ["TOTAL ALL PAGES", formatCurrency(allTotal)],
+  ];
+  for (const [label, amount] of summaryRows) {
+    cell(tableX + tableWidth - 230, y, 150, 16, label, { size: 6.5 });
+    cell(tableX + tableWidth - 80, y, 80, 16, amount, { bold: true, size: 6.5, align: "right" });
+    y += 16;
+  }
+
+  const notesY = Math.min(y + 2, pageHeight - 46);
+  cell(
+    tableX,
+    notesY,
+    tableWidth,
+    Math.min(40, pageHeight - notesY - 12),
+    "NOTE: 1) Full per diem will be paid for a full day if departure is before 1300 hrs and for dinner only if departure is before 1800 hrs. 2) No per diem will be paid on the day of return if the return is before 1300 hrs. 3) Per diem for lunch will be paid if return is after 1300 hrs and dinner if return is after 1800 hrs.",
+    { bold: true, size: 6.2 }
+  );
+  doc
+    .font("Helvetica")
+    .fontSize(6)
+    .fillColor("#444444")
+    .text(`Page ${pageIndex} of ${pageCount}`, tableX, pageHeight - 13, { width: tableWidth, align: "right" });
+}
+
+function drawTravelExpenseReportPages(doc, report) {
+  const days = buildTerDayBuckets(report.lineItems || []);
+  const dayPages = [];
+  for (let index = 0; index < Math.max(1, days.length); index += 6) {
+    dayPages.push(days.slice(index, index + 6));
+  }
+  const allTotal = Number(report.totalAmountKsh || 0);
+  let priorTotal = 0;
+
+  dayPages.forEach((pageDays, index) => {
+    if (index > 0) doc.addPage({ size: "A4", layout: "landscape", margin: 24 });
+    else doc.addPage({ size: "A4", layout: "landscape", margin: 24 });
+    const pageTotal = pageDays.reduce(
+      (sum, day) => sum + Object.values(day.amounts).reduce((daySum, amount) => daySum + Number(amount || 0), 0),
+      0
+    );
+    drawTerLandscapePage(doc, report, pageDays, index + 1, dayPages.length, priorTotal, pageTotal, allTotal);
+    priorTotal += pageTotal;
+  });
+}
+
 function buildReimbursementPdf(res, report) {
   streamPdf(res, `reimbursement-${report._id}.pdf`, (doc) => {
     drawPaymentRequestPage(doc, report);
-    drawTravelExpenseReportPage(doc, report);
+    drawTravelExpenseReportPages(doc, report);
+    if (report.travelRequest) {
+      doc.addPage({ size: "A4", layout: "portrait", margin: PAGE.margin });
+      drawTravelRequestPdfPage(doc, report.travelRequest);
+    }
   });
+}
+
+function buildEmptyTravelExpenseReportPdf(res) {
+  streamPdf(
+    res,
+    "travel-expense-report-template.pdf",
+    (doc) => {
+      drawTerLandscapePage(doc, {}, Array(6).fill(null), 1, 1, 0, 0, 0);
+    },
+    { layout: "landscape" }
+  );
 }
 
 module.exports = {
   buildTravelRequestPdf,
   buildTravelRequestsPdf,
   buildReimbursementPdf,
+  buildEmptyTravelExpenseReportPdf,
 };

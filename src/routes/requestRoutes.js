@@ -75,7 +75,7 @@ router.post(
 
 router.get(
   "/export/pdf",
-  requireRole("superadmin", "super_superadmin"),
+  requireRole("superadmin", "super_superadmin", "auditor"),
   scopeRequestQuery,
   asyncHandler(downloadTravelRequestsPdf)
 );

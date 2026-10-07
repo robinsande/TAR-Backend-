@@ -331,6 +331,31 @@ async function listApprovers(req, res) {
   return res.json(approvers);
 }
 
+async function listSupervisors(req, res) {
+  const supervisors = await User.find({
+    roles: "supervisor",
+    isActive: true,
+  })
+    .select("name email employeeNumber position department role roles")
+    .sort({ name: 1 });
+  return res.json(supervisors);
+}
+
+async function updateUserRoles(req, res) {
+  const roles = [...new Set(req.body.roles || [])];
+  if (roles.some((role) => !["supervisor", "finance_admin", "auditor"].includes(role))) {
+    throw new HttpError(400, "Workflow roles may only include supervisor, finance_admin, and auditor");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.params.id,
+    { $set: { roles } },
+    { new: true, runValidators: true }
+  ).select("-passwordHash -inviteToken -inviteTokenExpires -tarDraft");
+  if (!user) throw new HttpError(404, "User not found");
+  return res.json(user);
+}
+
 async function listPassengers(req, res) {
   const passengers = await listEligiblePassengers(req.user.id);
   return res.json(passengers);
@@ -356,6 +381,8 @@ module.exports = {
   updateUserStatus,
   deleteUser,
   listApprovers,
+  listSupervisors,
+  updateUserRoles,
   listPassengers,
   listBudgetHolders,
 };

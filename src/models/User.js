@@ -70,6 +70,10 @@ const userSchema = new mongoose.Schema(
       enum: ["user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"],
       default: "user",
     },
+    roles: {
+      type: [{ type: String, enum: ["supervisor", "finance_admin", "auditor"] }],
+      default: [],
+    },
     managerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

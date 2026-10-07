@@ -14,11 +14,17 @@ function idToString(value) {
  * Mirrors travel team visibility: own, direct reports, or assigned approver.
  */
 async function buildReimbursementTeamScope(user) {
-  if (user.role === "superadmin") {
+  if (["superadmin", "super_superadmin"].includes(user.role) || user.roles?.includes("auditor")) {
     return {};
   }
 
-  if (user.role !== "admin") {
+  if (user.roles?.includes("supervisor")) {
+    return { supervisorId: user.id };
+  }
+  if (user.roles?.includes("finance_admin")) {
+    return { status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW", "PAYMENT_PROCESSING", "COMPLETED"] } };
+  }
+  if (!["admin", "approver_budget_holder"].includes(user.role)) {
     return { submittedBy: user.id };
   }
 
@@ -29,23 +35,40 @@ async function buildReimbursementTeamScope(user) {
       { submittedBy: user.id },
       { submittedBy: { $in: directReportIds } },
       { selected_approver_id: user.id },
+      { lineManagerId: user.id },
     ],
   };
 }
 
 async function canAccessReport(user, report) {
-  if (user.role === "superadmin") {
+  if (["superadmin", "super_superadmin"].includes(user.role) || user.roles?.includes("auditor")) {
     return true;
   }
 
   const ownerId = idToString(report.submittedBy);
   const approverId = idToString(report.selected_approver_id);
 
-  if (ownerId === user.id || approverId === user.id) {
+  if (
+    ownerId === user.id ||
+    approverId === user.id ||
+    idToString(report.supervisorId) === user.id ||
+    idToString(report.lineManagerId) === user.id
+  ) {
     return true;
   }
 
-  if (user.role === "admin") {
+  if (user.roles?.includes("finance_admin")) {
+    return [
+      "SUBMITTED_TO_FINANCE",
+      "FINANCE_REVIEW",
+      "FINANCE_APPROVED",
+      "FINANCE_DECLINED",
+      "PAYMENT_PROCESSING",
+      "COMPLETED",
+    ].includes(report.status);
+  }
+
+  if (["admin", "approver_budget_holder"].includes(user.role)) {
     const directReportIds = await getDirectReportIds(user.id);
     const reportIdSet = new Set(directReportIds.map((id) => id.toString()));
     return reportIdSet.has(ownerId);

@@ -34,6 +34,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
   req.user = {
     id: user._id.toString(),
     role: user.role,
+    roles: user.roles || [],
     email: user.email,
     name: user.name,
   };
@@ -48,7 +49,10 @@ function requireRole(...allowedRoles) {
       return next(new HttpError(401, "Authentication required"));
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    if (
+      !allowedRoles.includes(req.user.role) &&
+      !allowedRoles.some((role) => req.user.roles?.includes(role))
+    ) {
       return next(new HttpError(403, "You do not have access to this resource"));
     }
 

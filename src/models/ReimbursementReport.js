@@ -28,7 +28,14 @@ const historySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: [
+        "pending",
+        "approved",
+        "rejected",
+        "SUPERVISOR_DECLINED",
+        "LINE_MANAGER_DECLINED",
+        "FINANCE_DECLINED",
+      ],
       required: true,
     },
     decision: {
@@ -58,7 +65,51 @@ const reimbursementReportSchema = new mongoose.Schema(
     selected_approver_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+    },
+    supervisorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lineManagerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    attachments: {
+      type: [{
+        category: {
+          type: String,
+          enum: ["financial", "supervisor", "line_manager"],
+          required: true,
+        },
+        originalName: { type: String, required: true, trim: true },
+        storageId: { type: String, required: true, trim: true },
+        mimeType: { type: String, required: true, trim: true },
+        size: { type: Number, required: true, min: 1 },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        uploadedAt: { type: Date, default: Date.now },
+      }],
+      default: [],
+    },
+    approvalHistory: {
+      type: [{
+        approvalLevel: {
+          type: String,
+          enum: ["SYSTEM", "SUPERVISOR", "LINE_MANAGER", "FINANCE_ADMIN"],
+          required: true,
+        },
+        action: { type: String, required: true, trim: true },
+        performedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+        performedByRole: { type: String, required: true, trim: true },
+        resultingStatus: { type: String, trim: true, default: null },
+        occurredAt: { type: Date, default: Date.now },
+        comments: { type: String, trim: true, default: null },
+        reason: { type: String, trim: true, default: null },
+        ipAddress: { type: String, trim: true, default: null },
+      }],
+      default: [],
     },
     employeeNumber: {
       type: String,
@@ -82,7 +133,26 @@ const reimbursementReportSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: [
+        "pending",
+        "approved",
+        "rejected",
+        "DRAFT",
+        "SUBMITTED_TO_SUPERVISOR",
+        "SUPERVISOR_REVIEW",
+        "SUPERVISOR_APPROVED",
+        "SUPERVISOR_DECLINED",
+        "SUBMITTED_TO_LINE_MANAGER",
+        "LINE_MANAGER_REVIEW",
+        "LINE_MANAGER_APPROVED",
+        "LINE_MANAGER_DECLINED",
+        "SUBMITTED_TO_FINANCE",
+        "FINANCE_REVIEW",
+        "FINANCE_APPROVED",
+        "FINANCE_DECLINED",
+        "PAYMENT_PROCESSING",
+        "COMPLETED",
+      ],
       default: "pending",
     },
     totalAmountKsh: {
@@ -111,6 +181,21 @@ const reimbursementReportSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    supervisorApprovedAt: { type: Date, default: null },
+    supervisorApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    supervisorDeclinedAt: { type: Date, default: null },
+    supervisorDeclinedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    supervisorDeclineReason: { type: String, trim: true, default: null },
+    lineManagerApprovedAt: { type: Date, default: null },
+    lineManagerApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    lineManagerDeclinedAt: { type: Date, default: null },
+    lineManagerDeclinedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    lineManagerDeclineReason: { type: String, trim: true, default: null },
+    financeApprovedAt: { type: Date, default: null },
+    financeApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    financeDeclinedAt: { type: Date, default: null },
+    financeDeclinedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    financeDeclineReason: { type: String, trim: true, default: null },
   },
   {
     timestamps: true,
@@ -125,6 +210,8 @@ reimbursementReportSchema.index(
 );
 reimbursementReportSchema.index({ submittedBy: 1, createdAt: -1 });
 reimbursementReportSchema.index({ selected_approver_id: 1, status: 1 });
+reimbursementReportSchema.index({ supervisorId: 1, status: 1 });
+reimbursementReportSchema.index({ lineManagerId: 1, status: 1 });
 
 reimbursementReportSchema.pre(
   ["findOneAndDelete", "deleteOne"],

@@ -4,8 +4,15 @@ const BudgetHolder = require("../models/BudgetHolder");
 const { sendEmail } = require("./emailService");
 const { loadPassengerUsers } = require("./passengerService");
 
-function buildNotificationEmail(recipientName, message, entityLabel, entityId, greeting = "Hello", greetingPunctuation = ",") {
-  const approvalUrl = getApprovalsUrl();
+function buildNotificationEmail(
+  recipientName,
+  message,
+  entityLabel,
+  entityId,
+  greeting = "Hello",
+  greetingPunctuation = ",",
+  approvalUrl = getApprovalsUrl()
+) {
   return `
     <p>${greeting} ${recipientName}${greetingPunctuation}</p>
     <p>${message}</p>
@@ -40,18 +47,22 @@ async function createAndSendNotification({
     message,
   });
 
+  const approvalUrl = reimbursementId
+    ? `${require("../config/env").frontendUrl.replace(/\/+$/, "")}/reimbursement-approvals.html`
+    : getApprovalsUrl();
   const html = buildNotificationEmail(
     recipient.name,
     message,
     entityLabel,
     entityId,
     greeting,
-    greetingPunctuation
+    greetingPunctuation,
+    approvalUrl
   );
   const emailOptions = {
     ...(replyTo ? { replyTo } : {}),
     ...(from ? { from } : {}),
-    text: `${greeting} ${recipient.name}${greetingPunctuation}\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${getApprovalsUrl()}`,
+    text: `${greeting} ${recipient.name}${greetingPunctuation}\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${approvalUrl}`,
   };
   const emailSent = await sendEmail(recipient.email, subject, html, emailOptions);
 
@@ -200,6 +211,24 @@ function buildReimbursementNotificationContent(type, report) {
         message: `A reimbursement request for ${destination} totaling KES ${amount} was edited and resubmitted for your review.`,
       };
     case "reimbursement_approved":
+      if (report.status === "SUBMITTED_TO_LINE_MANAGER") {
+        return {
+          subject: "Reimbursement approved by Supervisor",
+          message: `Your reimbursement request for ${destination} was approved by your Supervisor and forwarded to the Line Manager.`,
+        };
+      }
+      if (report.status === "SUBMITTED_TO_FINANCE") {
+        return {
+          subject: "Reimbursement approved by Line Manager",
+          message: `Your reimbursement request for ${destination} was approved by the Line Manager and forwarded to Finance.`,
+        };
+      }
+      if (report.status === "PAYMENT_PROCESSING") {
+        return {
+          subject: "Reimbursement approved by Finance",
+          message: `Your reimbursement request for ${destination} was approved by Finance and is being processed for payment.`,
+        };
+      }
       return {
         subject: "Reimbursement approved",
         message: `Your reimbursement request for ${destination} totaling KES ${amount} was approved.`,
@@ -207,7 +236,12 @@ function buildReimbursementNotificationContent(type, report) {
     case "reimbursement_rejected":
       return {
         subject: "Reimbursement rejected",
-        message: `Your reimbursement request for ${destination} totaling KES ${amount} was rejected.`,
+        message: `Your reimbursement request for ${destination} totaling KES ${amount} was declined.${report.decision?.comment ? ` Reason: ${report.decision.comment}` : ""}`,
+      };
+    case "reimbursement_completed":
+      return {
+        subject: "Reimbursement payment completed",
+        message: `Payment processing for your reimbursement request for ${destination} totaling KES ${amount} is complete.`,
       };
     default:
       return {

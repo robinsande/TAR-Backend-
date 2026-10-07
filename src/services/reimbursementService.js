@@ -7,7 +7,10 @@ function getReimbursementPopulateQuery(query) {
     .populate("travelRequest")
     .populate("submittedBy", "-passwordHash")
     .populate("selected_approver_id", "-passwordHash")
-    .populate("decision.decidedBy", "-passwordHash");
+    .populate("supervisorId", "-passwordHash")
+    .populate("lineManagerId", "-passwordHash")
+    .populate("decision.decidedBy", "-passwordHash")
+    .populate("approvalHistory.performedBy", "name email role");
 }
 
 async function populateReport(reportId) {
@@ -83,16 +86,31 @@ async function buildReimbursementResponse(reportId) {
   return response;
 }
 
-function buildReimbursementDraftData(payload, submitterId, approverId, fallbackProfile = {}) {
+function buildReimbursementDraftData(
+  payload,
+  submitterId,
+  supervisorId,
+  lineManagerId,
+  fallbackProfile = {}
+) {
   return {
     travelRequest: payload.travelRequestId,
     submittedBy: submitterId,
-    selected_approver_id: approverId,
+    selected_approver_id: lineManagerId,
+    supervisorId,
+    lineManagerId,
     employeeNumber: payload.employeeNumber || fallbackProfile.employeeNumber || "N/A",
     department: payload.department || fallbackProfile.department || "N/A",
     position: payload.position || fallbackProfile.position || "N/A",
     baseLocation: payload.baseLocation,
-    status: "pending",
+    status: "SUBMITTED_TO_SUPERVISOR",
+    approvalHistory: [{
+      approvalLevel: "SYSTEM",
+      action: "SUBMITTED_TO_SUPERVISOR",
+      performedBy: submitterId,
+      performedByRole: "STAFF",
+      occurredAt: new Date(),
+    }],
     submittedAt: new Date(),
   };
 }
@@ -133,8 +151,8 @@ function resetReimbursementDecision(report) {
   };
 }
 
-function applyReimbursementResubmission(report, payload, approverId) {
-  report.selected_approver_id = approverId;
+function applyReimbursementResubmission(report, payload, supervisorId) {
+  report.supervisorId = supervisorId;
   report.employeeNumber = payload.employeeNumber || report.employeeNumber;
   report.department = payload.department || report.department;
   report.position = payload.position || report.position;

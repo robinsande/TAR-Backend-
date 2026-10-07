@@ -7,7 +7,8 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - Account activation flow: imported users must set a password before logging in.
 - Approver selection via `selected_approver_id` (eligible admins), enforced on the server.
 - Travel request lifecycle support for create, approve, reject, and rejected-request resubmit.
-- Reimbursement reports with approve / reject and PDF download.
+- Reimbursements with sequential Supervisor → TAR Line Manager → Finance Admin approvals, approval history, expense support documents, and merged PDF export.
+- Read-only Auditor access to organization-wide TARs, reimbursements, and supporting documents.
 - In-app notifications plus Brevo email notifications.
 - Audit logging for request and reimbursement lifecycle events.
 - Spreadsheet import via CLI or superadmin upload endpoint.
@@ -41,7 +42,7 @@ Pending TARs receive automatic reminders to their primary selected approver afte
 - `PORT`: HTTP port for the API.
 - `MONGODB_URI`: MongoDB connection string.
 - `JWT_SECRET`: Secret used to sign JWTs (required strong value in production).
-- `JWT_EXPIRES_IN`: Token lifetime, for example `1d`.
+- `JWT_EXPIRES_IN`: Token lifetime, for example `7d`.
 - `BREVO_SMTP_USER`: Brevo SMTP login.
 - `BREVO_SMTP_KEY`: Brevo SMTP key/password from Brevo SMTP settings.
 - `BREVO_API_KEY`: Brevo API key. Preferred on Render because it uses HTTPS instead of an SMTP socket.
@@ -108,12 +109,15 @@ Test logins (password `Password123!`):
 ### Users (JWT)
 - `GET /api/users/me`
 - `GET /api/users/approvers`
+- `GET /api/users/supervisors` (active users with the `supervisor` workflow role)
 - `GET /api/users/passengers`
 - `GET /api/users` (superadmin)
+- `PATCH /api/users/:id/roles` (superadmin; assign or remove `supervisor`, `finance_admin`, and `auditor`)
 
 ### Travel requests (JWT)
 - `POST /api/requests` (user | admin)
 - `GET /api/requests` — query: `scope=mine|team|all`, `status`, `destination`, `dateFrom`, `dateTo`, `requestedByEmail`, `search`, `page`, `limit`
+- Auditor and superadmin read access is organization-wide; auditors cannot create, edit, approve, or reject TARs.
 - `GET /api/requests/pending-my-approval` (admin)
 - `GET /api/requests/:id`
 - `PATCH /api/requests/:id/approve` (admin, assigned approver)
@@ -123,13 +127,26 @@ Test logins (password `Password123!`):
 
 ### Reimbursements (JWT)
 - `GET /api/reimbursements/expense-categories`
-- `GET /api/reimbursements/my-requests` (superadmin sees all)
-- `GET /api/reimbursements/pending-approvals` (admin)
+- `GET /api/reimbursements/template/ter.pdf` (blank landscape Travel Expense Report template)
+- `GET /api/reimbursements/my-requests` (submitter sees own; auditor and superadmin see all)
+- `GET /api/reimbursements/team` (role-scoped team/approval queue; auditor and superadmin see all)
+- `GET /api/reimbursements/pending-approvals` (assigned Supervisor, TAR Line Manager, or Finance Admin)
 - `POST /api/reimbursements` (user | admin)
 - `GET /api/reimbursements/:id`
-- `PATCH /api/reimbursements/:id` (owner, rejected only)
-- `PATCH /api/reimbursements/:id/status` (admin — approve/reject)
+- `PATCH /api/reimbursements/:id` (owner, declined only; resubmission restarts Supervisor review)
+- `PATCH /api/reimbursements/:id/status` (`review_started`, `approved`, `rejected`, or `completed`; backend checks the assigned reviewer and current stage)
+- `POST /api/reimbursements/:id/attachments` and `GET /api/reimbursements/:id/attachments/:attachmentId` (server-enforced audience access)
 - `GET /api/reimbursements/:id/pdf`
+
+### Reimbursement approval and document access
+
+Reimbursement approvers are existing users assigned workflow roles by a superadmin. The submitter selects an active Supervisor from the eligible-user list; arbitrary names and email addresses are not accepted. The Line Manager is taken from the already-approved TAR and cannot be changed on the reimbursement.
+
+Approvals proceed in order: `SUBMITTED_TO_SUPERVISOR` → `SUPERVISOR_REVIEW` → Supervisor decision → `SUBMITTED_TO_LINE_MANAGER` → `LINE_MANAGER_REVIEW` → Line Manager decision → `SUBMITTED_TO_FINANCE` → `FINANCE_REVIEW` → Finance decision → `PAYMENT_PROCESSING` → `COMPLETED`. Reviewers explicitly start review before they can decide. The API derives the next state from the authenticated user, assigned reviewer, and current status; client-supplied final statuses cannot skip a stage. Declines require a reason, and decisions are appended to the immutable approval history.
+
+If the selected Supervisor is also the Line Manager assigned on the approved TAR, that user’s approval records both the Supervisor and Line Manager decisions and advances directly to Finance. Both roles are still required for the dual-role approver; the combined step does not bypass either approval or the Finance stage.
+
+The merged PDF contains the payment request, landscape Travel Expense Report pages (six expense days per page, up to 30 distinct days), and the approved TAR. Finance Admins can access only financial attachments; Line Managers can access financial and line-manager attachments; Supervisors can access supervisor and financial attachments. Auditors and superadmins have read-only access to all reimbursement records and documents. Back-to-Office Reports and TORs should be uploaded with the Line Manager audience, not the financial audience.
 
 ### Notifications (JWT)
 - `GET /api/notifications`
