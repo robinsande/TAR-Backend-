@@ -1143,10 +1143,12 @@ function getVoucherExpenseDescription(destination) {
 function buildVoucherDailySummary(day, destination, project, peopleSoftAccount) {
   const items = day.items || [];
   const invoiceNumbers = [...new Set(items.map((item) => item.invoiceNumber).filter(Boolean))];
-  const dayTotal = Object.values(day.amounts || {}).reduce(
-    (sum, amount) => sum + Number(amount || 0),
-    0
-  );
+  const dayTotal = day.amounts
+    ? Object.values(day.amounts).reduce(
+        (sum, amount) => sum + Number(amount || 0),
+        0
+      )
+    : items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   return [
     day.date ? formatDate(day.date) : "—",
     getVoucherExpenseDescription(destination),
