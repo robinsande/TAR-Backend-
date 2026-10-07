@@ -1009,18 +1009,16 @@ async function downloadReimbursementPdf(req, res) {
   }
 
   const [response] = await attachLineItems([report]);
-  const hasOtherExpenses = response.lineItems.some(
-    (item) => item.category === "OTHER EXPENSES"
+  const budgetHolderId = String(
+    response.selected_approver_id?._id || response.selected_approver_id || ""
   );
-  const requesterId = String(req.user.id);
+  const lineManagerId = String(response.lineManagerId?._id || response.lineManagerId || "");
   const budgetHolderIsLineManager =
-    String(response.selected_approver_id?._id || response.selected_approver_id || "") === requesterId &&
-    String(response.lineManagerId?._id || response.lineManagerId || "") === requesterId;
+    Boolean(budgetHolderId) && budgetHolderId === lineManagerId;
   const expenseDocuments = await Promise.all(
     (response.attachments || [])
       .filter((attachment) =>
-        attachment.documentType === "receipt_ticket" ||
-        (hasOtherExpenses && attachment.documentType === "expense_document") ||
+        attachment.category === "financial" ||
         (budgetHolderIsLineManager && attachment.category === "line_manager")
       )
       .filter((attachment) =>
@@ -1077,7 +1075,8 @@ async function uploadReimbursementAttachment(req, res) {
   ) {
     throw new HttpError(400, "Add an Other Expenses line to the TER before uploading its supporting document");
   }
-  const category = REIMBURSEMENT_ATTACHMENT_AUDIENCES[documentType] || "line_manager";
+  const category =
+    REIMBURSEMENT_ATTACHMENT_AUDIENCES[documentType] || req.body.category || "line_manager";
   if (!["financial", "supervisor", "line_manager"].includes(category)) {
     throw new HttpError(400, "Select a valid document audience");
   }

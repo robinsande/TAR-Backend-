@@ -1590,6 +1590,15 @@ describe("reimbursement workflow", () => {
         filename: "other-expense-scan.png",
         contentType: "image/png",
       });
+    const additionalFinancialDocument = await request(app)
+      .post(`/api/reimbursements/${created.body._id}/attachments`)
+      .set("Authorization", "Bearer " + requesterToken)
+      .field("documentType", "other")
+      .field("category", "financial")
+      .attach("file", Buffer.from(await expenseSupportPdf.save()), {
+        filename: "additional-finance-document.pdf",
+        contentType: "application/pdf",
+      });
 
     expect(receipt.status).toBe(201);
     expect(receipt.body).toMatchObject({
@@ -1612,13 +1621,14 @@ describe("reimbursement workflow", () => {
       category: "financial",
     });
     expect(expenseImage.status).toBe(201);
+    expect(additionalFinancialDocument.status).toBe(201);
 
     const mergedPdf = await request(app)
       .get(`/api/reimbursements/${created.body._id}/pdf`)
       .set("Authorization", "Bearer " + requesterToken);
     expect(mergedPdf.status).toBe(200);
     const mergedPdfDocument = await TestPDFDocument.load(mergedPdf.body);
-    expect(mergedPdfDocument.getPageCount()).toBe(6);
+    expect(mergedPdfDocument.getPageCount()).toBe(7);
     expect(mergedPdfDocument.getPage(3).getSize()).toMatchObject({
       width: 321,
       height: 456,
@@ -1689,8 +1699,12 @@ describe("reimbursement workflow", () => {
     const mergedPdf = await request(app)
       .get(`/api/reimbursements/${created.body._id}/pdf`)
       .set("Authorization", "Bearer " + defaultBudgetHolderToken);
+    const requesterMergedPdf = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/pdf`)
+      .set("Authorization", "Bearer " + requesterToken);
     expect(mergedPdf.status).toBe(200);
     expect(await getPdfPageCount(mergedPdf.body)).toBe(beforeUploadPageCount + 2);
+    expect(await getPdfPageCount(requesterMergedPdf.body)).toBe(beforeUploadPageCount + 2);
   }, 30000);
 
   it("downloads a reimbursement PDF", async () => {
