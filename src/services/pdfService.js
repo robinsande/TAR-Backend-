@@ -785,15 +785,11 @@ function drawPaymentRequestPage(doc, report) {
   const submitter = report.submittedBy || {};
   const total = Number(report.totalAmountKsh || 0);
   const paymentDetails = report.paymentDetails || {};
-  const purpose =
-    report.paymentRequestPurpose ||
-    travel.purposeOfTrip ||
-    report.lineItems?.[0]?.description ||
-    "Travel expense reimbursement";
+  const purpose = "Meals";
   const pageWidth = doc.page.width;
   const pageHeight = doc.page.height;
-  const width = pageWidth * 0.62;
-  const margin = (pageWidth - width) / 2;
+  const width = pageWidth - 34;
+  const margin = 17;
   const blueFill = "#d8f4f5";
 
   const cell = (x, y, w, h, value, options = {}) => {
@@ -855,18 +851,18 @@ function drawPaymentRequestPage(doc, report) {
       height: 10,
       align: "right",
     });
-  drawCareLogo(doc, { x: margin + 5, y: 15, width: 39 });
+  drawCareLogo(doc, { x: margin + 4, y: 15, width: 58 });
   doc
     .font("Helvetica-Bold")
     .fontSize(11)
-    .text("CARE International in Kenya", margin + 50, 17, {
-      width: width - 215,
+    .text("CARE International in Kenya", margin + 120, 17, {
+      width: width - 290,
       align: "center",
       height: 14,
     })
     .fontSize(10)
-    .text("PAYMENT VOUCHER FORM", margin + 50, 33, {
-      width: width - 215,
+    .text("PAYMENT VOUCHER FORM", margin + 120, 33, {
+      width: width - 290,
       align: "center",
       height: 13,
     })
@@ -874,80 +870,151 @@ function drawPaymentRequestPage(doc, report) {
     .fontSize(7)
     .text(
       "Payment request for liquidation of advances / reimbursement of expenses",
-      margin + 50,
+      margin + 120,
       47,
-      { width: width - 215, align: "center", height: 10 }
+      { width: width - 290, align: "center", height: 10 }
     );
   doc
     .font("Helvetica")
     .fontSize(6.5)
-    .text(`Transaction No.: ${report._id}`, pageWidth - margin - 145, 22, {
+    .text(`Transaction No.: ${report._id}`, margin + width - 145, 22, {
       width: 140,
       height: 10,
       ellipsis: true,
     })
-    .text(`Date: ${formatDate(report.submittedAt)}`, pageWidth - margin - 145, 34, {
+    .text(`Date: ${formatDate(report.submittedAt)}`, margin + width - 145, 34, {
       width: 140,
       height: 10,
     });
-  rule(60);
+  rule(64);
 
-  const profileY = 64;
+  const profileY = 67;
   const profileW = width / 4;
-  [
+  const profileFields = [
     ["Name of the Payee:", submitter.name],
-    ["Employee / Vendor No.:", report.employeeNumber || submitter.employeeNumber],
+    ["Employee/Vendor No.:", report.employeeNumber || submitter.employeeNumber],
     ["Unit:", report.department || submitter.department],
     ["Location:", report.baseLocation || submitter.office],
-  ].forEach(([label, value], index) => {
-    field(margin + index * profileW, profileY, profileW, label, value);
-  });
-  rule(80);
-  const amountY = 82;
-  field(margin, amountY, width / 2, "Amount of Payment:", formatCurrencyLabel(total), { valueSize: 8 });
-  field(margin + width / 2, amountY, width / 2, "Currency of Payment:", "KSHS", { valueSize: 8 });
-  rule(98);
-
-  doc.font("Helvetica-Bold").fontSize(6.5).text("Select payment method:", margin + 4, 101);
-  const methodOptions = [
-    ["Cheque", paymentDetails.paymentMethod === "cheque"],
-    ["Bank Transfer", paymentDetails.paymentMethod === "bank_transfer"],
-    ["M-PESA", paymentDetails.paymentMethod === "mpesa"],
   ];
-  methodOptions.forEach(([label, checked], index) => {
-    const x = margin + 150 + index * 105;
-    doc.font("Helvetica").fontSize(7).text(`${checkboxMark(checked)} ${label}`, x, 101, {
-      width: 100,
+  profileFields.forEach(([label, value], index) => {
+    const x = margin + index * profileW;
+    doc.font("Helvetica-Bold").fontSize(6.5).text(label, x + 4, profileY + 3, {
+      width: profileW * 0.46,
       height: 10,
+      ellipsis: true,
+    });
+    doc.font("Helvetica").fontSize(7).text(String(value || ""), x + profileW * 0.46, profileY + 3, {
+      width: profileW * 0.52 - 5,
+      height: 10,
+      ellipsis: true,
     });
   });
-  field(margin, 113, width / 3, "Picked Up By:", "");
-  field(margin + width / 3, 113, width / 3, "Mailed To:", "");
-  field(margin + (width * 2) / 3, 113, width / 3, "Mobile Number:", paymentDetails.mpesaNumber);
-  field(margin, 126, width / 3, "Bank Name:", "");
-  field(margin + width / 3, 126, width / 3, "Bank Address:", "");
-  field(margin + (width * 2) / 3, 126, width / 3, "Bank Account No.:", "");
-  field(margin, 139, width / 3, "SWIFT Code:", "");
-  field(margin + width / 3, 139, width / 3, "Beneficiary Name:", "");
-  field(margin + (width * 2) / 3, 139, width / 3, "Sort Code:", "");
-  field(margin, 152, width / 3, "Intermediary Bank Address:", "");
-  field(margin + width / 3, 152, width / 3, "Intermediary Bank Account No.:", "");
-  field(margin + (width * 2) / 3, 152, width / 3, "Intermediary SWIFT / ABA:", "");
+  rule(85);
+  const amountY = 88;
+  field(margin, amountY, width / 2, "Amount of Payment:", formatCurrencyLabel(total), { valueSize: 8 });
+  field(margin + width / 2, amountY, width / 2, "Currency of Payment:", "KSHS", { valueSize: 8 });
+  rule(105);
 
-  cell(margin, 166, width, 30, "", { fill: blueFill });
-  doc.font("Helvetica-Bold").fontSize(7).text("PURPOSE", margin + 5, 169, { width: 55, height: 10 });
-  doc.font("Helvetica").fontSize(7.5).text(purpose, margin + 62, 169, {
-    width: width - 70,
-    height: 23,
+  const leftWidth = width * 0.34;
+  const bankWidth = width * 0.40;
+  const purposeX = margin + leftWidth + bankWidth;
+  const purposeWidth = width - leftWidth - bankWidth;
+  const methodY = 108;
+  cell(margin, methodY, width, 12, "Fill in the appropriate box below", {
+    bold: true,
+    size: 6.5,
+    align: "center",
+  });
+  const methodHeaderY = methodY + 12;
+  const methodWidths = [leftWidth, bankWidth, purposeWidth];
+  const methodLabels = [
+    "Payment by Cheque No.",
+    "Bank Transfer",
+    "Safe Cash",
+  ];
+  let methodX = margin;
+  methodLabels.forEach((label, index) => {
+    cell(methodX, methodHeaderY, methodWidths[index], 13, label, {
+      bold: true,
+      size: 6.5,
+      align: "center",
+    });
+    methodX += methodWidths[index];
+  });
+
+  const detailsY = methodHeaderY + 13;
+  const detailsBottom = 244;
+  const leftRowHeight = (detailsBottom - detailsY) / 3;
+  [
+    ["Picked up:", ""],
+    ["Mailed:", ""],
+  ].forEach(([label, value], index) => {
+    const y = detailsY + index * leftRowHeight;
+    doc.font("Helvetica").fontSize(6.5).text(label, margin + 5, y + 5, {
+      width: leftWidth * 0.38,
+      height: 9,
+    });
+    doc.font("Helvetica").fontSize(7).text(value, margin + leftWidth * 0.40, y + 5, {
+      width: leftWidth * 0.57,
+      height: 9,
+    });
+    doc.save().strokeColor("#333333").lineWidth(0.5)
+      .moveTo(margin, y + leftRowHeight).lineTo(margin + leftWidth, y + leftRowHeight).stroke().restore();
+  });
+  const mobileY = detailsY + leftRowHeight * 2;
+  drawBox(doc, margin, mobileY, leftWidth, leftRowHeight, { fill: "#ffff00", lineWidth: 0.5 });
+  doc.font("Helvetica-Bold").fontSize(6.5).text("Mobile Number:", margin + 5, mobileY + 5, {
+    width: leftWidth * 0.38,
+    height: 9,
+  });
+  doc.font("Helvetica").fontSize(7).text(String(paymentDetails.mpesaNumber || ""), margin + leftWidth * 0.40, mobileY + 5, {
+    width: leftWidth * 0.57,
+    height: 9,
+    ellipsis: true,
+  });
+
+  const bankRows = [
+    "Bank Name:",
+    "Bank Address:",
+    "Bank Acct No.:",
+    "SWIFT Code:",
+    "Beneficiary Name:",
+    "SORT Code:",
+    "Intermediary Bank Address:",
+    "Intermediary Bank Acct No.:",
+    "Intermediary SWIFT / ABA#:",
+  ];
+  const bankRowHeight = (detailsBottom - detailsY) / bankRows.length;
+  bankRows.forEach((label, index) => {
+    const y = detailsY + index * bankRowHeight;
+    cell(margin + leftWidth, y, bankWidth, bankRowHeight, "", { size: 5.5 });
+    doc.font("Helvetica").fontSize(6).text(label, margin + leftWidth + 4, y + 1, {
+      width: bankWidth * 0.43,
+      height: Math.max(5, bankRowHeight - 2),
+      ellipsis: true,
+    });
+  });
+
+  const purposeY = detailsY + bankRowHeight * 2;
+  const purposeHeight = detailsBottom - purposeY;
+  cell(purposeX, purposeY, purposeWidth, purposeHeight, "", { fill: blueFill });
+  doc.font("Helvetica-Bold").fontSize(7).text("PURPOSE", purposeX + 3, purposeY + 2, {
+    width: purposeWidth - 6,
+    height: 9,
+    align: "center",
+  });
+  doc.font("Helvetica").fontSize(7.5).text(purpose, purposeX + 4, purposeY + 13, {
+    width: purposeWidth - 8,
+    height: purposeHeight - 16,
     ellipsis: true,
   });
 
   drawPaymentRequestExpenseSummary(doc, report, project, {
     x: margin,
-    y: 199,
+    y: 250,
     width,
     maxRows: 10,
-    rowHeight: 12,
+    rowHeight: 8,
   });
   const totalsY = 392;
   const totalColWidth = width / 3;
@@ -1411,14 +1478,17 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
   const tableWidth = pageWidth - margin * 2;
   const labelWidth = 112;
   const totalWidth = 62;
-  const dayWidth = (tableWidth - labelWidth - totalWidth) / 6;
+  const renderedDays = days.length ? days : [null];
+  const dayCount = renderedDays.length;
+  const dayWidth = (tableWidth - labelWidth - totalWidth) / dayCount;
+  const totalColumnIndex = dayCount + 1;
   const columns = [
     { x: tableX, width: labelWidth },
-    ...Array.from({ length: 6 }, (_, index) => ({
+    ...Array.from({ length: dayCount }, (_, index) => ({
       x: tableX + labelWidth + index * dayWidth,
       width: dayWidth,
     })),
-    { x: tableX + labelWidth + 6 * dayWidth, width: totalWidth },
+    { x: tableX + labelWidth + dayCount * dayWidth, width: totalWidth },
   ];
   let y = margin;
 
@@ -1495,7 +1565,7 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
   for (const [index, header] of dayHeaders.entries()) {
     const rowHeight = index < 5 ? 14 : 16;
     cell(columns[0].x, y, labelWidth, rowHeight, header, { bold: true, size: 6.5 });
-    days.forEach((day, dayIndex) => {
+    renderedDays.forEach((day, dayIndex) => {
       let value = "";
       if (index === 0 && day?.date) {
         value = new Date(day.date).toLocaleDateString("en-KE", { weekday: "long" });
@@ -1510,7 +1580,7 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
         align: "center",
       });
     });
-    cell(columns[7].x, y, totalWidth, rowHeight, index === 0 ? "TOTALS KSH" : "", {
+    cell(columns[totalColumnIndex].x, y, totalWidth, rowHeight, index === 0 ? "TOTALS KSH" : "", {
       bold: true,
       size: 6,
       align: "center",
@@ -1529,7 +1599,7 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
       const lineHeight = 15;
       cell(columns[0].x, y, labelWidth, lineHeight, category, { size: 6.3 });
       let rowTotal = 0;
-      days.forEach((day, dayIndex) => {
+      renderedDays.forEach((day, dayIndex) => {
         const amount = Number(day?.amounts?.[category] || 0);
         rowTotal += amount;
         cell(columns[dayIndex + 1].x, y, dayWidth, lineHeight, amount ? formatCurrency(amount) : "", {
@@ -1537,7 +1607,7 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
           align: "right",
         });
       });
-      cell(columns[7].x, y, totalWidth, lineHeight, rowTotal ? formatCurrency(rowTotal) : "-", {
+      cell(columns[totalColumnIndex].x, y, totalWidth, lineHeight, rowTotal ? formatCurrency(rowTotal) : "-", {
         size: 6.5,
         align: "right",
       });
@@ -1546,7 +1616,7 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
   }
 
   cell(columns[0].x, y, labelWidth, 18, "TOTALS FOR EACH DAY", { bold: true, fill: "#c8c8c8", size: 6.5 });
-  days.forEach((day, dayIndex) => {
+  renderedDays.forEach((day, dayIndex) => {
     const total = Object.values(day?.amounts || {}).reduce((sum, amount) => sum + Number(amount || 0), 0);
     cell(columns[dayIndex + 1].x, y, dayWidth, 18, total ? formatCurrency(total) : "-", {
       bold: true,
@@ -1555,7 +1625,7 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
       align: "right",
     });
   });
-  cell(columns[7].x, y, totalWidth, 18, formatCurrency(pageTotal), {
+  cell(columns[totalColumnIndex].x, y, totalWidth, 18, formatCurrency(pageTotal), {
     bold: true,
     fill: "#c8c8c8",
     size: 6.5,
