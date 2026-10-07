@@ -141,6 +141,36 @@ function assertStandardExpenseRates(lineItems) {
   }
 }
 
+async function resolveOptionalSupervisor(supervisorId, submitter, lineManager, passengers) {
+  if (!supervisorId) return null;
+
+  const supervisor = await getEligibleSupervisorById(supervisorId, {
+    excludeUserIds: [submitter._id],
+  });
+  if (String(supervisor._id) === String(lineManager._id)) {
+    throw new HttpError(400, "The Supervisor must be different from the approved TAR Line Manager");
+  }
+  ensureApproverNotOnRequest(supervisor._id, submitter._id, passengers);
+  return supervisor;
+}
+
+async function resolveOptionalFinanceCcAdmin(financeCcAdminId, financeAdmin) {
+  if (!financeCcAdminId) return null;
+
+  const financeCcAdmin = await User.findOne({
+    _id: financeCcAdminId,
+    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+    isActive: true,
+  });
+  if (!financeCcAdmin) {
+    throw new HttpError(400, "Select an active Finance Admin to copy");
+  }
+  if (String(financeCcAdmin._id) === String(financeAdmin._id)) {
+    throw new HttpError(400, "The Finance Admin to copy must differ from the assigned Finance approver");
+  }
+  return financeCcAdmin;
+}
+
 function resolveRequesterSignature(signatureValue, user) {
   const signature = String(signatureValue || "").trim();
   if (!signature) throw new HttpError(400, "Requester signature is required");
@@ -215,9 +245,6 @@ async function createReimbursement(req, res) {
 
   ensureUserCanClaimReimbursement(travelRequest, submitter._id);
 
-  const supervisor = await getEligibleSupervisorById(req.body.supervisorId, {
-    excludeUserIds: [submitter._id],
-  });
   const lineManagerId = travelRequest.selected_approver_id;
   const lineManager = await User.findOne({
     _id: lineManagerId,
@@ -228,6 +255,12 @@ async function createReimbursement(req, res) {
     throw new HttpError(400, "The approved TAR does not have an active Line Manager assigned");
   }
   ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
+  const supervisor = await resolveOptionalSupervisor(
+    req.body.supervisorId,
+    submitter,
+    lineManager,
+    travelRequest.passengers
+  );
 
   const financeAdmin = await User.findOne({
     _id: req.body.financeAdminId,
@@ -237,6 +270,10 @@ async function createReimbursement(req, res) {
   if (!financeAdmin) {
     throw new HttpError(400, "Select an active Finance Admin");
   }
+  const financeCcAdmin = await resolveOptionalFinanceCcAdmin(
+    req.body.financeCcAdminId,
+    financeAdmin
+  );
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
 
@@ -251,11 +288,12 @@ async function createReimbursement(req, res) {
         {
           ...req.body,
           travelRequestId: travelRequest._id,
+          financeCcAdminId: financeCcAdmin?._id || null,
           requesterSignedName,
           requesterSignature,
         },
         submitter._id,
-        supervisor._id,
+        supervisor?._id || null,
         lineManager._id,
         submitter
       )
@@ -288,7 +326,7 @@ async function createReimbursement(req, res) {
   });
 
   const response = await buildReimbursementResponse(report._id);
-  await notifyReimbursementUser(supervisor, "reimbursement_submitted", response);
+  await notifyReimbursementUser(supervisor || lineManager, "reimbursement_submitted", response);
 
   return res.status(201).json(response);
 }
@@ -304,9 +342,6 @@ async function previewReimbursement(req, res) {
   }
   ensureUserCanClaimReimbursement(travelRequest, submitter._id);
 
-  const supervisor = await getEligibleSupervisorById(req.body.supervisorId, {
-    excludeUserIds: [submitter._id],
-  });
   const lineManager = await User.findOne({
     _id: travelRequest.selected_approver_id?._id || travelRequest.selected_approver_id,
     role: { $in: ["admin", "approver_budget_holder"] },
@@ -316,6 +351,12 @@ async function previewReimbursement(req, res) {
     throw new HttpError(400, "The selected approved TAR does not have an active Line Manager");
   }
   ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
+  const supervisor = await resolveOptionalSupervisor(
+    req.body.supervisorId,
+    submitter,
+    lineManager,
+    travelRequest.passengers
+  );
 
   const financeAdmin = await User.findOne({
     _id: req.body.financeAdminId,
@@ -323,6 +364,7 @@ async function previewReimbursement(req, res) {
     isActive: true,
   });
   if (!financeAdmin) throw new HttpError(400, "Select an active Finance Admin");
+  await resolveOptionalFinanceCcAdmin(req.body.financeCcAdminId, financeAdmin);
 
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
@@ -342,6 +384,7 @@ async function previewReimbursement(req, res) {
     supervisorId: supervisor,
     lineManagerId: lineManager,
     financeAdminId: financeAdmin,
+    financeCcAdminId: req.body.financeCcAdminId || null,
     requesterSignedName,
     requesterSignedAt: new Date(),
     requesterSignature,
@@ -349,6 +392,8 @@ async function previewReimbursement(req, res) {
     department: req.body.department || submitter.department || "N/A",
     position: req.body.position || submitter.position || "N/A",
     baseLocation: req.body.baseLocation,
+    paymentRequestPurpose: req.body.paymentRequestPurpose,
+    paymentDetails: req.body.paymentDetails,
     lineItems,
     totalAmountKsh,
     submittedAt: new Date(),
@@ -457,9 +502,6 @@ async function updateReimbursement(req, res) {
     throw new HttpError(400, "Only declined reimbursement reports can be edited and resubmitted");
   }
 
-  const supervisor = await getEligibleSupervisorById(req.body.supervisorId, {
-    excludeUserIds: [req.user.id],
-  });
   const travelRequest = await TravelRequest.findById(req.body.travelRequestId);
   if (!travelRequest || travelRequest.status !== "approved") {
     throw new HttpError(409, "Select an approved TAR before resubmission");
@@ -483,6 +525,13 @@ async function updateReimbursement(req, res) {
   if (!lineManager) {
     throw new HttpError(409, "The approved TAR does not have an active Line Manager assigned");
   }
+  ensureApproverNotOnRequest(lineManager._id, req.currentUser._id, travelRequest.passengers);
+  const supervisor = await resolveOptionalSupervisor(
+    req.body.supervisorId,
+    req.currentUser,
+    lineManager,
+    travelRequest.passengers
+  );
   const financeAdmin = await User.findOne({
     _id: req.body.financeAdminId,
     $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
@@ -491,6 +540,10 @@ async function updateReimbursement(req, res) {
   if (!financeAdmin) {
     throw new HttpError(400, "Select an active Finance Admin");
   }
+  const financeCcAdmin = await resolveOptionalFinanceCcAdmin(
+    req.body.financeCcAdminId,
+    financeAdmin
+  );
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, req.currentUser);
   assertMaximumExpenseDays(req.body.lineItems);
@@ -507,18 +560,43 @@ async function updateReimbursement(req, res) {
     editedAt: new Date(),
   });
 
-  applyReimbursementResubmission(report, req.body, supervisor._id);
+  applyReimbursementResubmission(report, req.body, supervisor?._id || null);
   report.lineManagerId = lineManager._id;
   report.selected_approver_id = lineManager._id;
   report.travelRequest = travelRequest._id;
   report.financeAdminId = financeAdmin._id;
+  report.financeCcAdminId = financeCcAdmin?._id || null;
   report.requesterSignedName = requesterSignedName;
   report.requesterSignedAt = new Date();
   report.requesterSignature = requesterSignature;
-  report.status = "SUBMITTED_TO_SUPERVISOR";
+  report.paymentRequestPurpose = req.body.paymentRequestPurpose;
+  report.paymentDetails = req.body.paymentDetails || {};
+  report.supervisorSignedName = null;
+  report.lineManagerSignedName = null;
+  report.financeSignedName = null;
+  for (const field of [
+    "supervisorApprovedBy",
+    "supervisorApprovedAt",
+    "supervisorDeclinedBy",
+    "supervisorDeclinedAt",
+    "supervisorDeclineReason",
+    "lineManagerApprovedBy",
+    "lineManagerApprovedAt",
+    "lineManagerDeclinedBy",
+    "lineManagerDeclinedAt",
+    "lineManagerDeclineReason",
+    "financeApprovedBy",
+    "financeApprovedAt",
+    "financeDeclinedBy",
+    "financeDeclinedAt",
+    "financeDeclineReason",
+  ]) {
+    report[field] = null;
+  }
+  report.status = supervisor ? "SUBMITTED_TO_SUPERVISOR" : "SUBMITTED_TO_LINE_MANAGER";
   report.approvalHistory.push({
     approvalLevel: "SYSTEM",
-    action: "RESUBMITTED_TO_SUPERVISOR",
+    action: supervisor ? "RESUBMITTED_TO_SUPERVISOR" : "RESUBMITTED_TO_LINE_MANAGER",
     performedBy: req.user.id,
     performedByRole: req.currentUser?.role || req.user.role,
     occurredAt: new Date(),
@@ -538,7 +616,7 @@ async function updateReimbursement(req, res) {
   });
 
   const response = await buildReimbursementResponse(report._id);
-  await notifyReimbursementUser(supervisor, "reimbursement_resubmitted", response);
+  await notifyReimbursementUser(supervisor || lineManager, "reimbursement_resubmitted", response);
 
   return res.json(response);
 }
@@ -617,24 +695,6 @@ async function updateReimbursementStatus(req, res) {
           report.supervisorSignedName = req.currentUser?.name || req.user.name;
           report.supervisorApprovedBy = req.user.id;
           report.supervisorApprovedAt = new Date();
-          if (String(report.supervisorId) === String(report.lineManagerId)) {
-            const approvedAt = new Date();
-            report.lineManagerApprovedBy = req.user.id;
-            report.lineManagerApprovedAt = approvedAt;
-            report.lineManagerSignedName = req.currentUser?.name || req.user.name;
-            addApprovalHistory(report, req, {
-              level: "LINE_MANAGER",
-              action: "APPROVED",
-              comments: comment || "Approved together with Supervisor review.",
-              resultingStatus: "LINE_MANAGER_APPROVED",
-            });
-            report.status = "SUBMITTED_TO_FINANCE";
-            addApprovalHistory(report, req, {
-              level: "SYSTEM",
-              action: "SUBMITTED_TO_FINANCE",
-              resultingStatus: "SUBMITTED_TO_FINANCE",
-            });
-          }
         }
         if (stage.level === "LINE_MANAGER") {
           report.lineManagerSignedName = req.currentUser?.name || req.user.name;
@@ -716,6 +776,13 @@ async function updateReimbursementStatus(req, res) {
       for (const recipient of recipients) {
         await notifyReimbursementUser(recipient, "reimbursement_submitted", response);
       }
+    }
+    if (report.status === "SUBMITTED_TO_FINANCE" && response.financeCcAdminId) {
+      await notifyReimbursementUser(
+        response.financeCcAdminId,
+        "reimbursement_cc",
+        response
+      );
     }
     await notifyReimbursementUser(submitter, "reimbursement_approved", response);
   }

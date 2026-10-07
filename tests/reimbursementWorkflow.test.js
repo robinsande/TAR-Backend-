@@ -12,6 +12,7 @@ const TravelRequest = require("../src/models/TravelRequest");
 const BudgetHolder = require("../src/models/BudgetHolder");
 const ReimbursementReport = require("../src/models/ReimbursementReport");
 const ExpenseLineItem = require("../src/models/ExpenseLineItem");
+const Notification = require("../src/models/Notification");
 const { hashPassword } = require("../src/services/passwordService");
 const { startTestDatabase, stopTestDatabase } = require("./testDatabase");
 const { loginWithMfa } = require("./mfaTestHelper");
@@ -83,11 +84,17 @@ function buildRequestPayload(selectedApproverId, overrides = {}) {
   };
 }
 
-function buildReimbursementPayload(travelRequestId, selectedApproverId, overrides = {}) {
+function buildReimbursementPayload(travelRequestId, _selectedApproverId, overrides = {}) {
   return {
     travelRequestId,
-    supervisorId: selectedApproverId,
+    supervisorId: overrides.supervisorId || "",
     financeAdminId: defaultFinanceAdminId?.toString(),
+    paymentRequestPurpose: "Approved travel expenses",
+    paymentDetails: {
+      paymentMethod: "bank_transfer",
+      bankName: "Test Bank",
+      bankAccountNumber: "123456789",
+    },
     requesterSignedName: "Requester Signature",
     requesterSignature: testRequesterSignature,
     baseLocation: "Nairobi",
@@ -97,6 +104,7 @@ function buildReimbursementPayload(travelRequestId, selectedApproverId, override
         location: "Kisumu",
         category: "PER DIEM (M&I)",
         description: "Field day per diem",
+        invoiceNumber: "INV-TER-001",
         amount: 3500,
       },
       {
@@ -209,7 +217,7 @@ describe("reimbursement workflow", () => {
     const preview = await request(app)
       .post("/api/reimbursements/preview")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, manager._id));
+      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
     expect(preview.status).toBe(200);
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
     expect((preview.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || [])).toHaveLength(3);
@@ -217,18 +225,60 @@ describe("reimbursement workflow", () => {
     const response = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildReimbursementPayload(travelRequestId, manager._id));
+      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
     expect(response.status).toBe(201);
-    expect(response.body.status).toBe("SUBMITTED_TO_SUPERVISOR");
+    expect(response.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
+    expect(response.body.supervisorId).toBeNull();
     expect(response.body.totalAmountKsh).toBe(12000);
     expect(response.body.lineItems).toHaveLength(2);
     expect(response.body.lineItems[0].category).toBe("PER DIEM (M&I)");
     expect(response.body.lineItems[1].category).toBe("HOTEL ROOM & TAXES");
     expect(response.body.employeeNumber).toBe("R691");
     expect(response.body.department).toBe("ADMIN");
+    expect(response.body.paymentRequestPurpose).toBe("Approved travel expenses");
+    expect(response.body.lineItems[0].invoiceNumber).toBe("INV-TER-001");
+    expect(response.body.travelRequest.project).toMatchObject({
+      fundCode: "DEC16",
+      projectId: "CDEUKE3014",
+      activityId: "3",
+      departmentId: "KE0201",
+    });
     expect(response.body.financeAdminId._id).toBe(defaultFinanceAdminId.toString());
     expect(response.body.requesterSignedName).toBe(requester.name);
   });
+
+  it("allows no Supervisor and rejects assigning the TAR Line Manager to both roles", async () => {
+    const manager = await createUser({
+      name: "Optional Supervisor Line Manager",
+      email: "optional-supervisor-manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Optional Supervisor Requester",
+      email: "optional-supervisor-requester@example.com",
+      managerId: manager._id,
+    });
+    const travelRequestId = await createApprovedTravelRequest(manager, requester);
+    const requesterToken = await login(requester.email);
+    const payload = buildReimbursementPayload(travelRequestId, manager._id, {
+      supervisorId: manager._id.toString(),
+    });
+
+    const duplicateAssignment = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(payload);
+    expect(duplicateAssignment.status).toBe(400);
+    expect(duplicateAssignment.body.message).toMatch(/different from the approved TAR Line Manager/i);
+
+    const noSupervisor = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send({ ...payload, supervisorId: "" });
+    expect(noSupervisor.status).toBe(201);
+    expect(noSupervisor.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
+    expect(noSupervisor.body.supervisorId).toBeNull();
+  }, 20000);
 
   it("offers active Finance Admins and generates a one-page blank TER template", async () => {
     const requester = await createUser({ email: "template-requester@example.com" });
@@ -692,7 +742,10 @@ describe("reimbursement workflow", () => {
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, supervisor._id, { financeAdminId: finance._id }));
+      .send(buildReimbursementPayload(travelRequestId, supervisor._id, {
+        financeAdminId: finance._id,
+        supervisorId: supervisor._id,
+      }));
     const report = await ReimbursementReport.findById(created.body._id);
     report.attachments.push(
       ...["financial", "supervisor", "line_manager"].map((category) => ({
@@ -762,7 +815,7 @@ describe("reimbursement workflow", () => {
     expect(forbiddenApproval.status).toBe(403);
   }, 30000);
 
-  it("allows an assigned supervisor to approve or reject a reimbursement", async () => {
+  it("allows the assigned Line Manager to approve or reject when no Supervisor is assigned", async () => {
     const manager = await createUser({
       name: "Manager Admin",
       email: "manager@example.com",
@@ -794,7 +847,7 @@ describe("reimbursement workflow", () => {
 
     expect(approveResponse.status).toBe(200);
     expect(approveResponse.body.status).toBe("SUBMITTED_TO_FINANCE");
-    expect(approveResponse.body.supervisorApprovedAt).toBeTruthy();
+    expect(approveResponse.body.lineManagerApprovedAt).toBeTruthy();
 
     const rejectManager = await createUser({
       name: "Reject Manager",
@@ -828,7 +881,7 @@ describe("reimbursement workflow", () => {
       .send({ status: "rejected", comment: "Missing receipt for accommodation" });
 
     expect(rejectResponse.status).toBe(200);
-    expect(rejectResponse.body.status).toBe("SUPERVISOR_DECLINED");
+    expect(rejectResponse.body.status).toBe("LINE_MANAGER_DECLINED");
     expect(rejectResponse.body.decision.comment).toBe("Missing receipt for accommodation");
   });
 
@@ -962,10 +1015,10 @@ describe("reimbursement workflow", () => {
       );
 
     expect(updateResponse.status).toBe(200);
-    expect(updateResponse.body.status).toBe("SUBMITTED_TO_SUPERVISOR");
+    expect(updateResponse.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
     expect(updateResponse.body.version).toBe(2);
     expect(updateResponse.body.history).toHaveLength(1);
-    expect(updateResponse.body.history[0].status).toBe("SUPERVISOR_DECLINED");
+    expect(updateResponse.body.history[0].status).toBe("LINE_MANAGER_DECLINED");
     expect(updateResponse.body.history[0].decision.comment).toBe("Missing taxi receipt.");
     expect(updateResponse.body.baseLocation).toBe("Mombasa");
     expect(updateResponse.body.totalAmountKsh).toBe(1500);
@@ -1024,6 +1077,11 @@ describe("reimbursement workflow", () => {
       role: "admin",
       roles: ["finance_admin"],
     });
+    const financeCc = await createUser({
+      name: "Copied Finance Admin",
+      email: "finance-cc@example.com",
+      roles: ["finance_admin"],
+    });
     const requester = await createUser({
       name: "Requester",
       email: "requester@example.com",
@@ -1034,13 +1092,18 @@ describe("reimbursement workflow", () => {
     const supervisorToken = await login(supervisor.email);
     const managerToken = await login(manager.email);
     const financeToken = await login(finance.email);
+    const financeCcToken = await login(financeCc.email);
     const unassignedFinanceToken = await login(
       (await User.findById(defaultFinanceAdminId)).email
     );
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, supervisor._id, { financeAdminId: finance._id }));
+      .send(buildReimbursementPayload(travelRequestId, supervisor._id, {
+        financeAdminId: finance._id,
+        financeCcAdminId: financeCc._id,
+        supervisorId: supervisor._id,
+      }));
 
     expect(created.status).toBe(201);
     expect(created.body.status).toBe("SUBMITTED_TO_SUPERVISOR");
@@ -1053,8 +1116,12 @@ describe("reimbursement workflow", () => {
     const earlyFinanceAccess = await request(app)
       .get(`/api/reimbursements/${created.body._id}`)
       .set("Authorization", "Bearer " + financeToken);
+    const earlyFinanceCcAccess = await request(app)
+      .get(`/api/reimbursements/${created.body._id}`)
+      .set("Authorization", "Bearer " + financeCcToken);
     expect(skippedSupervisor.status).toBe(403);
     expect(earlyFinanceAccess.status).toBe(403);
+    expect(earlyFinanceCcAccess.status).toBe(403);
 
     const supervisorReview = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
@@ -1079,6 +1146,22 @@ describe("reimbursement workflow", () => {
       .send({ status: "approved" });
     expect(lineManagerApproval.body.status).toBe("SUBMITTED_TO_FINANCE");
     expect(lineManagerApproval.body.lineManagerSignedName).toBe(manager.name);
+
+    const financeCcAccess = await request(app)
+      .get(`/api/reimbursements/${created.body._id}`)
+      .set("Authorization", "Bearer " + financeCcToken);
+    const financeCcApproval = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + financeCcToken)
+      .send({ status: "review_started" });
+    const financeCcNotification = await Notification.findOne({
+      recipient: financeCc._id,
+      reimbursement: created.body._id,
+      type: "reimbursement_cc",
+    });
+    expect(financeCcAccess.status).toBe(200);
+    expect(financeCcApproval.status).toBe(403);
+    expect(financeCcNotification.message).toMatch(/copied for information only/i);
 
     const unassignedFinanceAccess = await request(app)
       .get(`/api/reimbursements/${created.body._id}`)
@@ -1126,68 +1209,67 @@ describe("reimbursement workflow", () => {
     );
   }, 20000);
 
-  it("records one approval by a dual-role line manager as both Supervisor and Line Manager approval", async () => {
+  it("requires a distinct Supervisor approval before the TAR Line Manager approval", async () => {
     const manager = await createUser({
-      name: "Supervisor and Line Manager",
-      email: "dual-approver@example.com",
+      name: "Distinct Line Manager",
+      email: "distinct-line-manager@example.com",
       role: "admin",
+    });
+    const supervisor = await createUser({
+      name: "Distinct Supervisor",
+      email: "distinct-supervisor@example.com",
       roles: ["supervisor"],
     });
     const requester = await createUser({
       name: "Requester",
-      email: "dual-flow-requester@example.com",
+      email: "distinct-flow-requester@example.com",
       managerId: manager._id,
     });
     const travelRequestId = await createApprovedTravelRequest(manager, requester);
     const requesterToken = await login(requester.email);
+    const supervisorToken = await login(supervisor.email);
     const managerToken = await login(manager.email);
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, manager._id));
+      .send(buildReimbursementPayload(travelRequestId, supervisor._id, {
+        supervisorId: supervisor._id,
+      }));
 
     expect(created.status).toBe(201);
-    expect(created.body.supervisorId._id).toBe(manager._id.toString());
+    expect(created.body.supervisorId._id).toBe(supervisor._id.toString());
     expect(created.body.lineManagerId._id).toBe(manager._id.toString());
 
-    const review = await request(app)
+    const managerCannotActAsSupervisor = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
       .set("Authorization", "Bearer " + managerToken)
       .send({ status: "review_started" });
-    const approval = await request(app)
+    expect(managerCannotActAsSupervisor.status).toBe(403);
+
+    const supervisorReview = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + supervisorToken)
+      .send({ status: "review_started" });
+    const supervisorApproval = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + supervisorToken)
+      .send({ status: "approved" });
+
+    expect(supervisorReview.body.status).toBe("SUPERVISOR_REVIEW");
+    expect(supervisorApproval.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
+    expect(supervisorApproval.body.lineManagerApprovedBy).toBeNull();
+
+    const lineManagerReview = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ status: "review_started" });
+    const lineManagerApproval = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
       .set("Authorization", "Bearer " + managerToken)
       .send({ status: "approved" });
-
-    expect(review.body.status).toBe("SUPERVISOR_REVIEW");
-    expect(approval.body.status).toBe("SUBMITTED_TO_FINANCE");
-    expect(String(approval.body.supervisorApprovedBy)).toBe(manager._id.toString());
-    expect(approval.body.supervisorApprovedAt).toBeTruthy();
-    expect(String(approval.body.lineManagerApprovedBy)).toBe(manager._id.toString());
-    expect(approval.body.lineManagerApprovedAt).toBeTruthy();
-    expect(approval.body.approvalHistory).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          approvalLevel: "SUPERVISOR",
-          action: "APPROVED",
-          resultingStatus: "SUPERVISOR_APPROVED",
-        }),
-        expect.objectContaining({
-          approvalLevel: "LINE_MANAGER",
-          action: "APPROVED",
-          resultingStatus: "LINE_MANAGER_APPROVED",
-        }),
-        expect.objectContaining({
-          action: "SUBMITTED_TO_FINANCE",
-          resultingStatus: "SUBMITTED_TO_FINANCE",
-        }),
-      ])
-    );
-    expect(approval.body.approvalHistory).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ action: "SUBMITTED_TO_LINE_MANAGER" }),
-      ])
-    );
+    expect(lineManagerReview.body.status).toBe("LINE_MANAGER_REVIEW");
+    expect(lineManagerApproval.body.status).toBe("SUBMITTED_TO_FINANCE");
+    expect(String(lineManagerApproval.body.lineManagerApprovedBy)).toBe(manager._id.toString());
   }, 20000);
 
   it("accepts up to 30 expense days and rejects more than 30", async () => {
@@ -1248,7 +1330,7 @@ describe("reimbursement workflow", () => {
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", `Bearer ${requesterToken}`)
-      .send(buildReimbursementPayload(travelRequestId, manager._id));
+      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
 
     const pdfResponse = await request(app)
       .get(`/api/reimbursements/${created.body._id}/pdf`)

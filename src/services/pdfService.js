@@ -400,70 +400,132 @@ function signatureBlock(doc, columns) {
   doc.fillColor("#000000");
 }
 
-function paymentRequestSignatureBlock(doc, signatures) {
-  ensureSpace(doc, 96);
-  const gap = 8;
-  const colWidth = (contentWidth() - gap * (signatures.length - 1)) / signatures.length;
+function paymentRequestSignatureBlock(doc, { requester, supervisor, reviewedBy, approvedBy, employeeNumber }) {
+  ensureSpace(doc, 150);
+  const x = PAGE.margin;
+  const width = contentWidth();
   const startY = doc.y;
+  const colWidth = width / 3;
 
-  signatures.forEach((signature, index) => {
-    const x = PAGE.margin + index * (colWidth + gap);
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(7.5)
-      .text(signature.title, x, startY, { width: colWidth, height: 20 });
-    doc
-      .font("Helvetica")
-      .fontSize(7)
-      .text(`Name: ${dash(signature.name)}`, x, startY + 20, {
-        width: colWidth,
-        height: 14,
-        ellipsis: true,
-      });
-
-    if (signature.signature?.startsWith("data:image/png;base64,")) {
-      const imageBytes = Buffer.from(signature.signature.slice("data:image/png;base64,".length), "base64");
-      doc.image(imageBytes, x + 2, startY + 35, {
-        fit: [colWidth - 4, 27],
+  function drawSignature(signature, left, top, maxWidth, maxHeight = 18) {
+    if (signature?.startsWith("data:image/png;base64,")) {
+      const imageBytes = Buffer.from(signature.slice("data:image/png;base64,".length), "base64");
+      doc.image(imageBytes, left, top, {
+        fit: [maxWidth, maxHeight],
         align: "left",
         valign: "center",
       });
-    } else if (signature.signature) {
+    } else if (signature) {
       doc
         .font("Helvetica-Oblique")
-        .fontSize(10)
+        .fontSize(8)
         .fillColor("#1646a0")
-        .text(signature.signature, x + 2, startY + 39, {
-          width: colWidth - 4,
-          height: 20,
-          ellipsis: true,
-        });
+        .text(signature, left, top + 2, { width: maxWidth, height: maxHeight - 2, ellipsis: true });
     } else {
       doc
-        .font("Helvetica")
-        .fontSize(7)
-        .fillColor("#555555")
-        .text("Pending", x + 2, startY + 41, { width: colWidth - 4 });
+        .save()
+        .strokeColor("#555555")
+        .lineWidth(0.6)
+        .dash(1, { space: 2 })
+        .moveTo(left, top + maxHeight - 2)
+        .lineTo(left + maxWidth, top + maxHeight - 2)
+        .stroke()
+        .restore();
     }
+  }
 
-    doc
-      .moveTo(x, startY + 64)
-      .lineTo(x + colWidth - 4, startY + 64)
-      .strokeColor("#555555")
-      .lineWidth(0.7)
-      .stroke();
-    doc
-      .font("Helvetica")
-      .fontSize(7)
-      .fillColor("#333333")
-      .text(`Date: ${dash(signature.date)}`, x, startY + 68, {
-        width: colWidth,
-        height: 12,
-        ellipsis: true,
-      });
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(7.5)
+    .text(
+      "The payment requested above is reasonable and proper justification is attached to this payment request.",
+      x,
+      startY,
+      { width, align: "center" }
+    )
+    .text(
+      "Staff approving the settlement of the advance confirm that all CARE Kenya Policies and Procedures have been followed.",
+      x,
+      startY + 13,
+      { width, align: "center" }
+    );
+
+  const supervisorY = startY + 30;
+  doc
+    .font("Helvetica")
+    .fontSize(7)
+    .fillColor("#000000")
+    .text(`Name of the Supervisor: ${dash(supervisor.name)}`, x, supervisorY, { width: width * 0.48 })
+    .text(`Designation: ${dash(supervisor.designation)}`, x + width * 0.52, supervisorY, {
+      width: width * 0.22,
+    })
+    .text("Signature:", x + width * 0.76, supervisorY, { width: 42 });
+  drawSignature(supervisor.signature, x + width * 0.76 + 42, supervisorY - 1, width * 0.24 - 42, 14);
+  doc.moveTo(x, supervisorY + 17).lineTo(x + width, supervisorY + 17).strokeColor("#222222").lineWidth(0.7).stroke();
+
+  const columnsY = supervisorY + 22;
+  const approvals = [
+    { title: "Prepared by:", ...requester },
+    { title: "Reviewed by:", ...reviewedBy },
+    { title: "Approved by:", ...approvedBy },
+  ];
+  approvals.forEach((approval, index) => {
+    const left = x + index * colWidth;
+    if (index > 0) {
+      doc
+        .moveTo(left, columnsY)
+        .lineTo(left, columnsY + 65)
+        .strokeColor("#cccccc")
+        .lineWidth(0.5)
+        .stroke();
+    }
+    doc.font("Helvetica").fontSize(7).fillColor("#000000");
+    doc.text(approval.title, left + 3, columnsY, { width: colWidth - 6 });
+    doc.text(`Name: ${dash(approval.name)}`, left + 3, columnsY + 10, {
+      width: colWidth - 6,
+      height: 10,
+      ellipsis: true,
+    });
+    doc.text(`Designation: ${dash(approval.designation)}`, left + 3, columnsY + 22, {
+      width: colWidth - 6,
+      height: 10,
+      ellipsis: true,
+    });
+    doc.text("Signature:", left + 3, columnsY + 36, { width: 42 });
+    drawSignature(approval.signature, left + 46, columnsY + 34, colWidth - 52, 14);
+    doc.text(`Date: ${dash(approval.date)}`, left + 3, columnsY + 51, {
+      width: colWidth - 6,
+      height: 10,
+      ellipsis: true,
+    });
   });
-
-  doc.y = startY + 84;
+  const acknowledgmentY = columnsY + 66;
+  doc
+    .moveTo(x, acknowledgmentY)
+    .lineTo(x + width, acknowledgmentY)
+    .strokeColor("#222222")
+    .lineWidth(0.7)
+    .stroke();
+  doc
+    .font("Helvetica")
+    .fontSize(7)
+    .text("Acknowledgement of receipt of payment:", x + 3, acknowledgmentY + 4, { width: colWidth - 6 })
+    .text("Name: ........................................", x + 3, acknowledgmentY + 15, { width: colWidth - 6 })
+    .text("Designation: ................................", x + 3, acknowledgmentY + 27, { width: colWidth - 6 })
+    .text("Signature: ..................................", x + 3, acknowledgmentY + 39, { width: colWidth - 6 })
+    .text(`Employee (SA) Number: ${dash(employeeNumber)}`, x + colWidth + 3, acknowledgmentY + 15, {
+      width: colWidth - 6,
+    })
+    .text("Date: ........................................", x + colWidth + 3, acknowledgmentY + 39, {
+      width: colWidth - 6,
+    });
+  doc
+    .moveTo(x, acknowledgmentY + 55)
+    .lineTo(x + width, acknowledgmentY + 55)
+    .strokeColor("#222222")
+    .lineWidth(0.7)
+    .stroke();
+  doc.y = acknowledgmentY + 60;
   doc.fillColor("#000000");
 }
 
@@ -722,21 +784,46 @@ function drawPaymentRequestPage(doc, report) {
   const project = travel.project || {};
   const submitter = report.submittedBy || {};
   const total = Number(report.totalAmountKsh || 0);
+  const paymentDetails = report.paymentDetails || {};
   const purpose =
+    report.paymentRequestPurpose ||
     travel.purposeOfTrip ||
     report.lineItems?.[0]?.description ||
     "Travel expense reimbursement";
 
-  drawHeaderBand(doc, {
-    eyebrow: "CARE International in KENYA",
-    subtitle: "Finance — Settlement of advances / reimbursement of expenses",
-    title: "PAYMENT REQUEST",
-  });
-
-  fieldRow(doc, [
-    { label: "Transaction / Report No.:", value: String(report._id) },
-    { label: "Status:", value: String(report.status || "").toUpperCase() },
-  ]);
+  drawBox(doc, 6, 6, PAGE.width - 12, PAGE.height - 12, { lineWidth: 1.2 });
+  const headerY = PAGE.margin + 6;
+  drawCareLogo(doc, { x: PAGE.margin, y: headerY, width: 48 });
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .text("CARE International in........KENYA........", PAGE.margin + 55, headerY + 8, {
+      width: contentWidth() - 180,
+      align: "center",
+    });
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .text(
+      "Payment Request (to be used for liquidation of advances / reimbursement of expenses etc.)",
+      PAGE.margin + 55,
+      headerY + 28,
+      { width: contentWidth() - 180, align: "center" }
+    );
+  doc
+    .font("Helvetica")
+    .fontSize(7)
+    .text(`Transaction No.: ${report._id}`, PAGE.width - PAGE.margin - 115, headerY + 48, {
+      width: 115,
+      align: "left",
+    })
+    .text(`Date: ${formatDate(report.submittedAt)}`, PAGE.width - PAGE.margin - 115, headerY + 60, {
+      width: 115,
+      align: "left",
+    });
+  doc.y = headerY + 78;
+  drawLine(doc, doc.y);
+  doc.y += 8;
 
   fieldRow(doc, [
     { label: "Name of the Payee:", value: submitter.name },
@@ -744,20 +831,76 @@ function drawPaymentRequestPage(doc, report) {
       label: "Employee / Vendor No.:",
       value: report.employeeNumber || submitter.employeeNumber,
     },
-  ]);
-
-  fieldRow(doc, [
     { label: "Unit:", value: report.department || submitter.department },
     { label: "Location:", value: report.baseLocation || submitter.office },
-    { label: "Position:", value: report.position || submitter.position },
   ]);
 
   fieldRow(doc, [
     { label: "Amount of Payment:", value: formatCurrencyLabel(total) },
     { label: "Currency of Payment:", value: "KSHS" },
+    { label: "Position:", value: report.position || submitter.position },
+    { label: "Status:", value: String(report.status || "").toUpperCase() },
   ]);
 
-  labeledBlock(doc, "PURPOSE:", purpose, { spacingAfter: 0.35 });
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(7)
+    .text("Fill in the appropriate box below", PAGE.margin, doc.y + 2, {
+      width: contentWidth(),
+      align: "center",
+    });
+  doc.moveDown(0.4);
+  fieldRow(doc, [
+    {
+      label: "Payment by Cheque No.",
+      value: `${paymentDetails.paymentMethod === "cheque" ? "[X]" : "[ ]"} ${paymentDetails.chequeNumber || ""}`,
+    },
+    {
+      label: "Bank Transfer",
+      value: paymentDetails.paymentMethod === "bank_transfer" ? "[X]" : "[ ]",
+    },
+    {
+      label: "Safe Cash",
+      value: paymentDetails.paymentMethod === "safe_cash" ? "[X]" : "[ ]",
+    },
+  ]);
+  fieldRow(doc, [
+    { label: "Picked Up By:", value: paymentDetails.pickedUpBy },
+    { label: "Mailed To:", value: paymentDetails.mailedTo },
+    { label: "Mobile Number:", value: paymentDetails.mobileNumber },
+  ]);
+  fieldRow(doc, [
+    { label: "Bank Name:", value: paymentDetails.bankName },
+    { label: "Bank Address:", value: paymentDetails.bankAddress },
+    { label: "Bank Account No.:", value: paymentDetails.bankAccountNumber },
+  ]);
+  fieldRow(doc, [
+    { label: "SWIFT Code:", value: paymentDetails.swiftCode },
+    { label: "Beneficiary Name:", value: paymentDetails.beneficiaryName },
+    { label: "Sort Code:", value: paymentDetails.sortCode },
+  ]);
+  fieldRow(doc, [
+    { label: "Intermediary Bank Address:", value: paymentDetails.intermediaryBankAddress },
+    { label: "Intermediary Bank Account No.:", value: paymentDetails.intermediaryBankAccountNumber },
+    { label: "Intermediary SWIFT / ABA:", value: paymentDetails.intermediarySwiftAba },
+  ]);
+  const purposeY = doc.y + 2;
+  drawBox(doc, PAGE.margin, purposeY, contentWidth(), 42, {
+    fill: "#d8f4f5",
+    lineWidth: 0.8,
+  });
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .text("PURPOSE", PAGE.margin + 8, purposeY + 7, { width: 65 });
+  doc
+    .font("Helvetica")
+    .fontSize(9)
+    .text(purpose, PAGE.margin + 75, purposeY + 6, {
+      width: contentWidth() - 83,
+      height: 31,
+    });
+  doc.y = purposeY + 48;
 
   doc
     .font("Helvetica-Bold")
@@ -769,26 +912,28 @@ function drawPaymentRequestPage(doc, report) {
   drawTable(
     doc,
     [
-      { header: "Date", width: 70 },
-      { header: "Description", width: 130 },
-      { header: "Amount", width: 55, align: "right" },
-      { header: "Fund Code", width: 55 },
-      { header: "Project ID", width: 70 },
-      { header: "Activity ID", width: 55 },
-      { header: "Dept ID", width: 80 },
+      { header: "Date", width: 48 },
+      { header: "Description", width: 95 },
+      { header: "Amount", width: 48, align: "right" },
+      { header: "Invoice No.", width: 48 },
+      { header: "PeopleSoft Fund Account", width: 62 },
+      { header: "PeopleSoft Project ID", width: 70 },
+      { header: "PeopleSoft Activity ID", width: 62 },
+      { header: "PeopleSoft Department ID", width: 82 },
     ],
     lineItems.length
       ? lineItems.map((item) => [
           formatDate(item.expenseDate),
           item.description || item.category,
           formatCurrency(item.amount),
+          item.invoiceNumber,
           project.fundCode,
           project.projectId,
           project.activityId,
           project.departmentId,
         ])
-      : [["—", "No line items", "0.00", "—", "—", "—", "—"]],
-    { fontSize: 7.5, headerHeight: 32 }
+      : [["—", "No line items", "0.00", "—", "—", "—", "—", "—"]],
+    { fontSize: 7.5, headerHeight: 40 }
   );
 
   fieldRow(doc, [
@@ -800,43 +945,32 @@ function drawPaymentRequestPage(doc, report) {
     },
   ]);
 
-  doc
-    .font("Helvetica-Oblique")
-    .fontSize(7.5)
-    .fillColor("#333333")
-    .text(
-      "The payment requested above is reasonable and proper justification is attached to this payment request. Staff approving the settlement of the advance confirm that all CARE Kenya Policies and Procedures have been followed.",
-      { width: contentWidth() }
-    );
-  doc.fillColor("#000000");
-  doc.moveDown(0.6);
-
-  paymentRequestSignatureBlock(doc, [
-    {
-      title: "REQUESTER — PREPARED BY",
+  paymentRequestSignatureBlock(doc, {
+    supervisor: {
+      name: report.supervisorId?.name || "Not assigned",
+      designation: report.supervisorId?.position,
+      signature: report.supervisorSignedName,
+    },
+    requester: {
       name: report.requesterSignedName || submitter.name,
+      designation: report.position || submitter.position,
       signature: report.requesterSignature,
       date: formatDate(report.requesterSignedAt || report.submittedAt),
     },
-    {
-      title: "SUPERVISOR — REVIEWED BY",
-      name: report.supervisorId?.name,
-      signature: report.supervisorSignedName,
-      date: formatDate(report.supervisorApprovedAt),
-    },
-    {
-      title: "LINE MANAGER — REVIEWED BY",
-      name: report.lineManagerId?.name,
-      signature: report.lineManagerSignedName,
-      date: formatDate(report.lineManagerApprovedAt),
-    },
-    {
-      title: "FINANCE — APPROVED BY",
+    reviewedBy: {
       name: report.financeAdminId?.name,
+      designation: report.financeAdminId?.position,
       signature: report.financeSignedName,
       date: formatDate(report.financeApprovedAt),
     },
-  ]);
+    approvedBy: {
+      name: report.lineManagerId?.name,
+      designation: report.lineManagerId?.position,
+      signature: report.lineManagerSignedName,
+      date: formatDate(report.lineManagerApprovedAt),
+    },
+    employeeNumber: report.employeeNumber || submitter.employeeNumber,
+  });
 
   if (report.decision?.comment) {
     labeledBlock(doc, "Decision Comment:", report.decision.comment);

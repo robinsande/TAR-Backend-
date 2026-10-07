@@ -11,13 +11,14 @@ function buildNotificationEmail(
   entityId,
   greeting = "Hello",
   greetingPunctuation = ",",
-  approvalUrl = getApprovalsUrl()
+  approvalUrl = getApprovalsUrl(),
+  linkLabel = "Open the CARE TAR approvals page"
 ) {
   return `
     <p>${greeting} ${recipientName}${greetingPunctuation}</p>
     <p>${message}</p>
     <p>${entityLabel}: ${entityId}</p>
-    <p><a href="${approvalUrl}">Open the CARE TAR approvals page</a></p>
+    <p><a href="${approvalUrl}">${linkLabel}</a></p>
   `;
 }
 
@@ -47,9 +48,16 @@ async function createAndSendNotification({
     message,
   });
 
+  const frontendUrl = require("../config/env").frontendUrl.replace(/\/+$/, "");
+  const isReimbursementCopy = type === "reimbursement_cc";
   const approvalUrl = reimbursementId
-    ? `${require("../config/env").frontendUrl.replace(/\/+$/, "")}/reimbursement-approvals.html`
+    ? isReimbursementCopy
+      ? `${frontendUrl}/reimbursement-detail.html?id=${encodeURIComponent(reimbursementId)}`
+      : `${frontendUrl}/reimbursement-approvals.html`
     : getApprovalsUrl();
+  const linkLabel = isReimbursementCopy
+    ? "Open reimbursement details"
+    : "Open the CARE TAR approvals page";
   const html = buildNotificationEmail(
     recipient.name,
     message,
@@ -57,12 +65,13 @@ async function createAndSendNotification({
     entityId,
     greeting,
     greetingPunctuation,
-    approvalUrl
+    approvalUrl,
+    linkLabel
   );
   const emailOptions = {
     ...(replyTo ? { replyTo } : {}),
     ...(from ? { from } : {}),
-    text: `${greeting} ${recipient.name}${greetingPunctuation}\n\n${message}\n\n${entityLabel}: ${entityId}\n\nOpen the CARE TAR approvals page: ${approvalUrl}`,
+    text: `${greeting} ${recipient.name}${greetingPunctuation}\n\n${message}\n\n${entityLabel}: ${entityId}\n\n${linkLabel}: ${approvalUrl}`,
   };
   const emailSent = await sendEmail(recipient.email, subject, html, emailOptions);
 
@@ -198,8 +207,14 @@ function buildSuperAdminApprovalNotification(requestDocument) {
 function buildReimbursementNotificationContent(type, report) {
   const destination = report.travelRequest?.itinerary?.destination || "the trip";
   const amount = Number(report.totalAmountKsh || 0).toFixed(2);
+  const financeApproverName = report.financeAdminId?.name || "the assigned Finance Admin";
 
   switch (type) {
+    case "reimbursement_cc":
+      return {
+        subject: "Reimbursement copied for your information",
+        message: `A reimbursement request for ${destination} totaling KES ${amount} has been assigned to ${financeApproverName}. You are copied for information only and are not the assigned approver.`,
+      };
     case "reimbursement_submitted":
       return {
         subject: "New reimbursement awaiting approval",

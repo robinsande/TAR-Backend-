@@ -28,6 +28,11 @@ const expenseLineItemSchema = new mongoose.Schema(
       trim: true,
       required: true,
     },
+    invoiceNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     amount: {
       type: mongoose.Schema.Types.Decimal128,
       required: true,

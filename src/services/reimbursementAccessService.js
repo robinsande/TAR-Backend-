@@ -25,6 +25,7 @@ async function buildReimbursementTeamScope(user) {
     return {
       $or: [
         { financeAdminId: user.id },
+        { financeCcAdminId: user.id },
         { financeAdminId: null },
       ],
       status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW", "FINANCE_APPROVED", "FINANCE_DECLINED", "PAYMENT_PROCESSING", "COMPLETED"] },
@@ -64,14 +65,18 @@ async function canAccessReport(user, report) {
   }
 
   if (user.roles?.includes("finance_admin")) {
-    return (!report.financeAdminId || idToString(report.financeAdminId) === user.id) && [
+    return (
+      (!report.financeAdminId ||
+        idToString(report.financeAdminId) === user.id ||
+        idToString(report.financeCcAdminId) === user.id) && [
       "SUBMITTED_TO_FINANCE",
       "FINANCE_REVIEW",
       "FINANCE_APPROVED",
       "FINANCE_DECLINED",
       "PAYMENT_PROCESSING",
       "COMPLETED",
-    ].includes(report.status);
+      ].includes(report.status)
+    );
   }
 
   if (["admin", "approver_budget_holder"].includes(user.role)) {

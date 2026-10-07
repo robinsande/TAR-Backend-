@@ -10,6 +10,7 @@ function getReimbursementPopulateQuery(query) {
     .populate("supervisorId", "-passwordHash")
     .populate("lineManagerId", "-passwordHash")
     .populate("financeAdminId", "-passwordHash")
+    .populate("financeCcAdminId", "-passwordHash")
     .populate("decision.decidedBy", "-passwordHash")
     .populate("approvalHistory.performedBy", "name email role");
 }
@@ -32,6 +33,7 @@ function normalizeLineItems(lineItems = []) {
       location: item.location.trim(),
       category,
       description,
+      invoiceNumber: String(item.invoiceNumber || "").trim(),
       amount: toDecimal128(item.amount),
     };
   });
@@ -94,6 +96,9 @@ function buildReimbursementDraftData(
   lineManagerId,
   fallbackProfile = {}
 ) {
+  const initialStatus = supervisorId
+    ? "SUBMITTED_TO_SUPERVISOR"
+    : "SUBMITTED_TO_LINE_MANAGER";
   return {
     travelRequest: payload.travelRequestId,
     submittedBy: submitterId,
@@ -101,6 +106,9 @@ function buildReimbursementDraftData(
     supervisorId,
     lineManagerId,
     financeAdminId: payload.financeAdminId,
+    financeCcAdminId: payload.financeCcAdminId || null,
+    paymentRequestPurpose: payload.paymentRequestPurpose,
+    paymentDetails: payload.paymentDetails || {},
     requesterSignedName: payload.requesterSignedName,
     requesterSignedAt: new Date(),
     requesterSignature: payload.requesterSignature,
@@ -108,10 +116,10 @@ function buildReimbursementDraftData(
     department: payload.department || fallbackProfile.department || "N/A",
     position: payload.position || fallbackProfile.position || "N/A",
     baseLocation: payload.baseLocation,
-    status: "SUBMITTED_TO_SUPERVISOR",
+    status: initialStatus,
     approvalHistory: [{
       approvalLevel: "SYSTEM",
-      action: "SUBMITTED_TO_SUPERVISOR",
+      action: initialStatus,
       performedBy: submitterId,
       performedByRole: "STAFF",
       occurredAt: new Date(),
@@ -133,6 +141,11 @@ async function replaceReportLineItems(reportId, lineItems) {
 function getEditableReimbursementSnapshot(report, lineItems = []) {
   return {
     selected_approver_id: report.selected_approver_id,
+    supervisorId: report.supervisorId,
+    financeAdminId: report.financeAdminId,
+    financeCcAdminId: report.financeCcAdminId,
+    paymentRequestPurpose: report.paymentRequestPurpose,
+    paymentDetails: report.paymentDetails,
     employeeNumber: report.employeeNumber,
     department: report.department,
     position: report.position,
@@ -143,6 +156,7 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
       location: item.location,
       category: item.category,
       description: item.description,
+      invoiceNumber: item.invoiceNumber,
       amount: item.amount,
     })),
   };
@@ -163,7 +177,9 @@ function applyReimbursementResubmission(report, payload, supervisorId) {
   report.position = payload.position || report.position;
   report.baseLocation = payload.baseLocation;
   report.version += 1;
-  report.status = "pending";
+  report.status = supervisorId
+    ? "SUBMITTED_TO_SUPERVISOR"
+    : "SUBMITTED_TO_LINE_MANAGER";
   report.approvedAt = null;
   resetReimbursementDecision(report);
   report.submittedAt = new Date();

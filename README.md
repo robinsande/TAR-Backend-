@@ -134,20 +134,20 @@ Test logins (password `Password123!`):
 - `GET /api/reimbursements/pending-approvals` (assigned Supervisor, TAR Line Manager, or Finance Admin)
 - `POST /api/reimbursements` (staff roles, including superadmin and super-superadmin accounts)
 - `GET /api/reimbursements/:id`
-- `PATCH /api/reimbursements/:id` (owner, declined only; resubmission restarts Supervisor review)
+- `PATCH /api/reimbursements/:id` (owner, declined only; resubmission restarts the assigned Supervisor stage or goes directly to the TAR Line Manager when no Supervisor is assigned)
 - `PATCH /api/reimbursements/:id/status` (`review_started`, `approved`, `rejected`, or `completed`; backend checks the assigned reviewer and current stage)
 - `POST /api/reimbursements/:id/attachments` and `GET /api/reimbursements/:id/attachments/:attachmentId` (server-enforced audience access)
 - `GET /api/reimbursements/:id/pdf`
 
 ### Reimbursement approval and document access
 
-Reimbursement approvers are existing users assigned workflow roles by a superadmin. The submitter selects an active Supervisor from the eligible-user list; arbitrary names and email addresses are not accepted. The Line Manager is taken from the already-approved TAR and cannot be changed on the reimbursement.
+Reimbursement approvers are existing users assigned workflow roles by a superadmin. A submitter may select an active Supervisor from the eligible-user list; arbitrary names and email addresses are not accepted. Supervisor selection is optional when no separate Supervisor is assigned. The Supervisor must differ from the Line Manager taken from the already-approved TAR, which cannot be changed on the reimbursement.
 
-Approvals proceed in order: `SUBMITTED_TO_SUPERVISOR` → `SUPERVISOR_REVIEW` → Supervisor decision → `SUBMITTED_TO_LINE_MANAGER` → `LINE_MANAGER_REVIEW` → Line Manager decision → `SUBMITTED_TO_FINANCE` → `FINANCE_REVIEW` → Finance decision → `PAYMENT_PROCESSING` → `COMPLETED`. Reviewers explicitly start review before they can decide. The API derives the next state from the authenticated user, assigned reviewer, and current status; client-supplied final statuses cannot skip a stage. Declines require a reason, and decisions are appended to the immutable approval history.
+When a separate Supervisor is selected, approvals proceed in order: `SUBMITTED_TO_SUPERVISOR` → `SUPERVISOR_REVIEW` → Supervisor decision → `SUBMITTED_TO_LINE_MANAGER` → `LINE_MANAGER_REVIEW` → Line Manager decision → `SUBMITTED_TO_FINANCE` → `FINANCE_REVIEW` → Finance decision → `PAYMENT_PROCESSING` → `COMPLETED`. When no separate Supervisor is assigned, the request goes directly to the TAR Line Manager. Reviewers explicitly start review before they can decide. The API derives the next state from the authenticated user, assigned reviewer, and current status; client-supplied final statuses cannot skip a stage. Declines require a reason, and decisions are appended to the immutable approval history.
 
-If the selected Supervisor is also the Line Manager assigned on the approved TAR, that user’s approval records both the Supervisor and Line Manager decisions and advances directly to Finance. Both roles are still required for the dual-role approver; the combined step does not bypass either approval or the Finance stage.
+The Line Manager cannot be assigned to the Supervisor role on the same reimbursement. Each approval stage must be completed by its own assigned approver. A separate Finance Admin may optionally be copied when the report reaches Finance; that copy recipient gets read-only access to the financial package and cannot approve or complete payment.
 
-The merged PDF contains the payment request, landscape Travel Expense Report pages (six expense days per page, up to 30 distinct days), and the approved TAR. Finance Admins can access only financial attachments; Line Managers can access financial and line-manager attachments; Supervisors can access supervisor and financial attachments. Auditors and superadmins have read-only access to all reimbursement records and documents. Back-to-Office Reports and TORs should be uploaded with the Line Manager audience, not the financial audience.
+The merged PDF contains the payment request, landscape Travel Expense Report pages (six expense days per page, up to 30 distinct days), and the approved TAR. On the Payment Request, the requester is shown under “Prepared by,” Finance under “Reviewed by,” and the TAR Line Manager under “Approved by”; each designation is read from the approver’s profile position. Finance Admins and Finance copy recipients can access only financial attachments; Line Managers can access financial and line-manager attachments; Supervisors can access supervisor and financial attachments. Auditors and superadmins have read-only access to all reimbursement records and documents. Back-to-Office Reports and TORs should be uploaded with the Line Manager audience, not the financial audience.
 
 ### Notifications (JWT)
 - `GET /api/notifications`

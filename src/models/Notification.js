@@ -19,6 +19,7 @@ const notificationSchema = new mongoose.Schema(
         "resubmitted",
         "reimbursement_submitted",
         "reimbursement_resubmitted",
+        "reimbursement_cc",
         "reimbursement_approved",
         "reimbursement_rejected",
         "reimbursement_completed",
