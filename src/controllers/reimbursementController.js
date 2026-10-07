@@ -16,6 +16,7 @@ const {
   buildReimbursementPdf,
   buildPaymentVoucherPdf,
   buildEmptyTravelExpenseReportPdf,
+  getVoucherExpenseDescription,
 } = require("../services/pdfService");
 const { getTravelRequestPopulateQuery } = require("../services/travelRequestService");
 const {
@@ -283,7 +284,10 @@ async function createReimbursement(req, res) {
 
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
-  const lineItems = normalizeLineItems(req.body.lineItems);
+  const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
+    ...item,
+    description: getVoucherExpenseDescription(travelRequest.itinerary?.destination),
+  }));
   let report;
 
   try {
@@ -375,7 +379,10 @@ async function previewReimbursement(req, res) {
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
 
-  const lineItems = normalizeLineItems(req.body.lineItems);
+  const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
+    ...item,
+    description: getVoucherExpenseDescription(travelRequest.itinerary?.destination),
+  }));
   const totalAmountKsh = lineItems.reduce(
     (total, item) => total + Number(item.amount.toString()),
     0
@@ -552,7 +559,10 @@ async function updateReimbursement(req, res) {
     resolveRequesterSignature(req.body.requesterSignature, req.currentUser);
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
-  const lineItems = normalizeLineItems(req.body.lineItems);
+  const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
+    ...item,
+    description: getVoucherExpenseDescription(travelRequest.itinerary?.destination),
+  }));
   const existingLineItems = await ExpenseLineItem.find({ report: report._id }).sort({
     expenseDate: 1,
   });

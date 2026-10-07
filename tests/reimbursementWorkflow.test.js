@@ -1372,8 +1372,8 @@ describe("reimbursement workflow", () => {
       }));
     expect(accepted.status).toBe(201);
     expect(accepted.body.lineItems).toHaveLength(30);
-    expect(accepted.body.lineItems[0].description).toBe("Per diem in Dadaab");
-    expect(accepted.body.lineItems[8].description).toBe("Travel expense");
+    expect(accepted.body.lineItems[0].description).toBe("Per diem while in Kisumu");
+    expect(accepted.body.lineItems[8].description).toBe("Per diem while in Kisumu");
     expect(getVoucherExpenseDescription(" Dadaab ")).toBe("Per diem while in Dadaab");
     expect(getVoucherExpenseDescription("")).toBe("Per diem");
     expect(buildVoucherDailySummary({
