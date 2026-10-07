@@ -260,18 +260,16 @@ function visibleAttachments(report, user) {
   if (user.roles?.includes("auditor")) return report.attachments || [];
   const reportOwnerId = String(report.submittedBy?._id || report.submittedBy || "");
   if (reportOwnerId === user.id) return report.attachments || [];
-  if (userHasRole(user, "finance_admin")) {
-    return (report.attachments || []).filter((attachment) => attachment.category === "financial");
-  }
   const lineManagerId = String(report.lineManagerId?._id || report.lineManagerId || "");
   const budgetHolderId = String(report.selected_approver_id?._id || report.selected_approver_id || "");
   if (lineManagerId === user.id) {
     return report.attachments || [];
   }
   if (budgetHolderId === user.id) {
-    return lineManagerId === user.id
-      ? report.attachments || []
-      : (report.attachments || []).filter((attachment) => attachment.category === "financial");
+    return (report.attachments || []).filter((attachment) => attachment.category === "financial");
+  }
+  if (userHasRole(user, "finance_admin")) {
+    return (report.attachments || []).filter((attachment) => attachment.category === "financial");
   }
   if (user.role === "admin") {
     return [];
@@ -1014,19 +1012,28 @@ async function downloadReimbursementPdf(req, res) {
   const hasOtherExpenses = response.lineItems.some(
     (item) => item.category === "OTHER EXPENSES"
   );
+  const requesterId = String(req.user.id);
+  const budgetHolderIsLineManager =
+    String(response.selected_approver_id?._id || response.selected_approver_id || "") === requesterId &&
+    String(response.lineManagerId?._id || response.lineManagerId || "") === requesterId;
   const expenseDocuments = await Promise.all(
     (response.attachments || [])
       .filter((attachment) =>
         attachment.documentType === "receipt_ticket" ||
-        (hasOtherExpenses && attachment.documentType === "expense_document")
+        (hasOtherExpenses && attachment.documentType === "expense_document") ||
+        (budgetHolderIsLineManager && attachment.category === "line_manager")
       )
       .filter((attachment) =>
         ["application/pdf", "image/jpeg", "image/png"].includes(attachment.mimeType)
       )
-      .sort((left, right) =>
-        Number(left.documentType !== "receipt_ticket") -
-        Number(right.documentType !== "receipt_ticket")
-      )
+      .sort((left, right) => {
+        const priority = (attachment) => {
+          if (attachment.documentType === "receipt_ticket") return 0;
+          if (attachment.documentType === "expense_document") return 1;
+          return 2;
+        };
+        return priority(left) - priority(right);
+      })
       .map(async (attachment) => ({
         buffer: await getAttachmentBuffer(attachment.storageId),
         mimeType: attachment.mimeType,

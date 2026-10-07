@@ -1644,6 +1644,55 @@ describe("reimbursement workflow", () => {
     expect(expenseWithoutTerLine.body.message).toMatch(/OTHER EXPENSES/i);
   }, 30000);
 
+  it("includes Line Manager support documents in the merged package when the Budget Holder is also the Line Manager", async () => {
+    const manager = await User.findById(defaultBudgetHolderUserId);
+    const requester = await createUser({
+      name: "Requester with shared approver",
+      email: "shared-approver-requester@example.com",
+    });
+    const travelRequestId = await createApprovedTravelRequest(manager, requester);
+    const requesterToken = await login(requester.email);
+    const created = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildReimbursementPayload(travelRequestId, manager._id, { supervisorId: "" }));
+    expect(created.status).toBe(201);
+
+    const beforeUpload = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/pdf`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken);
+    const beforeUploadPageCount = await getPdfPageCount(beforeUpload.body);
+    const supportPdf = await TestPDFDocument.create();
+    supportPdf.addPage();
+    const supportFile = Buffer.from(await supportPdf.save());
+
+    for (const [documentType, filename] of [
+      ["back_to_office", "back-to-office.pdf"],
+      ["terms_of_reference", "terms-of-reference.pdf"],
+    ]) {
+      const upload = await request(app)
+        .post(`/api/reimbursements/${created.body._id}/attachments`)
+        .set("Authorization", "Bearer " + requesterToken)
+        .field("documentType", documentType)
+        .attach("file", supportFile, { filename, contentType: "application/pdf" });
+      expect(upload.status).toBe(201);
+    }
+
+    const budgetHolderDetail = await request(app)
+      .get(`/api/reimbursements/${created.body._id}`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken);
+    expect(budgetHolderDetail.body.attachments.map((attachment) => attachment.documentType)).toEqual([
+      "back_to_office",
+      "terms_of_reference",
+    ]);
+
+    const mergedPdf = await request(app)
+      .get(`/api/reimbursements/${created.body._id}/pdf`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken);
+    expect(mergedPdf.status).toBe(200);
+    expect(await getPdfPageCount(mergedPdf.body)).toBe(beforeUploadPageCount + 2);
+  }, 30000);
+
   it("downloads a reimbursement PDF", async () => {
     const manager = await createUser({
       name: "Manager Admin",
