@@ -13,6 +13,7 @@ const {
 const { createAuditLog } = require("../services/auditLogService");
 const { notifyReimbursementUser } = require("../services/notificationService");
 const { buildReimbursementPdf, buildEmptyTravelExpenseReportPdf } = require("../services/pdfService");
+const { getTravelRequestPopulateQuery } = require("../services/travelRequestService");
 const {
   ensureUserCanClaimReimbursement,
   ensureApproverNotOnRequest,
@@ -75,6 +76,7 @@ const APPROVAL_STAGES = {
   SUBMITTED_TO_FINANCE: {
     review: "FINANCE_REVIEW",
     level: "FINANCE_ADMIN",
+    assignedField: "financeAdminId",
     approverRole: "finance_admin",
     approved: "PAYMENT_PROCESSING",
     declined: "FINANCE_DECLINED",
@@ -82,10 +84,17 @@ const APPROVAL_STAGES = {
   FINANCE_REVIEW: {
     review: "FINANCE_REVIEW",
     level: "FINANCE_ADMIN",
+    assignedField: "financeAdminId",
     approverRole: "finance_admin",
     approved: "PAYMENT_PROCESSING",
     declined: "FINANCE_DECLINED",
   },
+};
+
+const STANDARD_EXPENSE_RATES = {
+  BREAKFAST: 1000,
+  LUNCH: 1000,
+  DINNER: 1500,
 };
 
 function userHasRole(user, role) {
@@ -123,6 +132,27 @@ function assertMaximumExpenseDays(lineItems) {
   }
 }
 
+function assertStandardExpenseRates(lineItems) {
+  for (const item of lineItems) {
+    const requiredAmount = STANDARD_EXPENSE_RATES[item.category];
+    if (requiredAmount && Number(item.amount).toFixed(2) !== requiredAmount.toFixed(2)) {
+      throw new HttpError(400, `${item.category} must be reimbursed at KSH ${requiredAmount}`);
+    }
+  }
+}
+
+function resolveRequesterSignature(signatureValue, user) {
+  const signature = String(signatureValue || "").trim();
+  if (!signature) throw new HttpError(400, "Requester signature is required");
+
+  const isPngSignature = /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(signature);
+  if (!isPngSignature && signature.toLowerCase() !== user.name.trim().toLowerCase()) {
+    throw new HttpError(400, "Type your account name or provide a drawn signature");
+  }
+
+  return { signature, signedName: user.name };
+}
+
 function visibleAttachments(report, user) {
   if (["superadmin", "super_superadmin"].includes(user.role)) return report.attachments || [];
   if (user.roles?.includes("auditor")) return report.attachments || [];
@@ -152,11 +182,14 @@ async function attachLineItemsForUser(reports, user) {
 }
 
 async function stageRecipients(stage, report) {
-  if (stage.level === "FINANCE_ADMIN") {
-    return User.find({ roles: "finance_admin", isActive: true }).select("-passwordHash");
-  }
   const assignedValue = report[stage.assignedField];
   const recipientId = assignedValue?._id || assignedValue;
+  if (stage.level === "FINANCE_ADMIN" && !recipientId) {
+    return User.find({
+      $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+      isActive: true,
+    }).select("-passwordHash");
+  }
   const recipient = recipientId
     ? await User.findOne({ _id: recipientId, isActive: true }).select("-passwordHash")
     : null;
@@ -196,14 +229,31 @@ async function createReimbursement(req, res) {
   }
   ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
 
+  const financeAdmin = await User.findOne({
+    _id: req.body.financeAdminId,
+    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+    isActive: true,
+  });
+  if (!financeAdmin) {
+    throw new HttpError(400, "Select an active Finance Admin");
+  }
+  const { signature: requesterSignature, signedName: requesterSignedName } =
+    resolveRequesterSignature(req.body.requesterSignature, submitter);
+
   assertMaximumExpenseDays(req.body.lineItems);
+  assertStandardExpenseRates(req.body.lineItems);
   const lineItems = normalizeLineItems(req.body.lineItems);
   let report;
 
   try {
     report = await ReimbursementReport.create(
       buildReimbursementDraftData(
-        { ...req.body, travelRequestId: travelRequest._id },
+        {
+          ...req.body,
+          travelRequestId: travelRequest._id,
+          requesterSignedName,
+          requesterSignature,
+        },
         submitter._id,
         supervisor._id,
         lineManager._id,
@@ -243,6 +293,69 @@ async function createReimbursement(req, res) {
   return res.status(201).json(response);
 }
 
+async function previewReimbursement(req, res) {
+  const submitter = req.currentUser;
+  const travelRequest = await getTravelRequestPopulateQuery(
+    TravelRequest.findById(req.body.travelRequestId)
+  );
+
+  if (!travelRequest || travelRequest.status !== "approved") {
+    throw new HttpError(400, "Preview requires a selected approved TAR");
+  }
+  ensureUserCanClaimReimbursement(travelRequest, submitter._id);
+
+  const supervisor = await getEligibleSupervisorById(req.body.supervisorId, {
+    excludeUserIds: [submitter._id],
+  });
+  const lineManager = await User.findOne({
+    _id: travelRequest.selected_approver_id?._id || travelRequest.selected_approver_id,
+    role: { $in: ["admin", "approver_budget_holder"] },
+    isActive: true,
+  });
+  if (!lineManager) {
+    throw new HttpError(400, "The selected approved TAR does not have an active Line Manager");
+  }
+  ensureApproverNotOnRequest(lineManager._id, submitter._id, travelRequest.passengers);
+
+  const financeAdmin = await User.findOne({
+    _id: req.body.financeAdminId,
+    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+    isActive: true,
+  });
+  if (!financeAdmin) throw new HttpError(400, "Select an active Finance Admin");
+
+  const { signature: requesterSignature, signedName: requesterSignedName } =
+    resolveRequesterSignature(req.body.requesterSignature, submitter);
+  assertMaximumExpenseDays(req.body.lineItems);
+  assertStandardExpenseRates(req.body.lineItems);
+
+  const lineItems = normalizeLineItems(req.body.lineItems);
+  const totalAmountKsh = lineItems.reduce(
+    (total, item) => total + Number(item.amount.toString()),
+    0
+  );
+  buildReimbursementPdf(res, {
+    _id: "preview",
+    travelRequest,
+    submittedBy: submitter,
+    selected_approver_id: lineManager,
+    supervisorId: supervisor,
+    lineManagerId: lineManager,
+    financeAdminId: financeAdmin,
+    requesterSignedName,
+    requesterSignedAt: new Date(),
+    requesterSignature,
+    employeeNumber: req.body.employeeNumber || submitter.employeeNumber || "N/A",
+    department: req.body.department || submitter.department || "N/A",
+    position: req.body.position || submitter.position || "N/A",
+    baseLocation: req.body.baseLocation,
+    lineItems,
+    totalAmountKsh,
+    submittedAt: new Date(),
+    status: "DRAFT",
+  });
+}
+
 async function getMyReimbursements(req, res) {
   const canViewAll =
     ["superadmin", "super_superadmin"].includes(req.user.role) ||
@@ -275,7 +388,13 @@ async function getPendingApprovals(req, res) {
     });
   }
   if (userHasRole(req.user, "finance_admin")) {
-    stages.push({ status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW"] } });
+    stages.push({
+      $or: [
+        { financeAdminId: req.user.id },
+        { financeAdminId: null },
+      ],
+      status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW"] },
+    });
   }
   if (hasLineManagerRole(req.user)) {
     stages.push({
@@ -341,9 +460,20 @@ async function updateReimbursement(req, res) {
   const supervisor = await getEligibleSupervisorById(req.body.supervisorId, {
     excludeUserIds: [req.user.id],
   });
-  const travelRequest = await TravelRequest.findById(report.travelRequest);
+  const travelRequest = await TravelRequest.findById(req.body.travelRequestId);
   if (!travelRequest || travelRequest.status !== "approved") {
-    throw new HttpError(409, "The linked TAR must remain approved before resubmission");
+    throw new HttpError(409, "Select an approved TAR before resubmission");
+  }
+  ensureUserCanClaimReimbursement(travelRequest, req.currentUser._id);
+  if (
+    String(travelRequest._id) !== String(report.travelRequest) &&
+    await ReimbursementReport.exists({
+      travelRequest: travelRequest._id,
+      submittedBy: req.currentUser._id,
+      _id: { $ne: report._id },
+    })
+  ) {
+    throw new HttpError(409, "A reimbursement already exists for you on the selected TAR");
   }
   const lineManager = await User.findOne({
     _id: travelRequest.selected_approver_id,
@@ -353,7 +483,18 @@ async function updateReimbursement(req, res) {
   if (!lineManager) {
     throw new HttpError(409, "The approved TAR does not have an active Line Manager assigned");
   }
+  const financeAdmin = await User.findOne({
+    _id: req.body.financeAdminId,
+    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+    isActive: true,
+  });
+  if (!financeAdmin) {
+    throw new HttpError(400, "Select an active Finance Admin");
+  }
+  const { signature: requesterSignature, signedName: requesterSignedName } =
+    resolveRequesterSignature(req.body.requesterSignature, req.currentUser);
   assertMaximumExpenseDays(req.body.lineItems);
+  assertStandardExpenseRates(req.body.lineItems);
   const lineItems = normalizeLineItems(req.body.lineItems);
   const existingLineItems = await ExpenseLineItem.find({ report: report._id }).sort({
     expenseDate: 1,
@@ -369,6 +510,11 @@ async function updateReimbursement(req, res) {
   applyReimbursementResubmission(report, req.body, supervisor._id);
   report.lineManagerId = lineManager._id;
   report.selected_approver_id = lineManager._id;
+  report.travelRequest = travelRequest._id;
+  report.financeAdminId = financeAdmin._id;
+  report.requesterSignedName = requesterSignedName;
+  report.requesterSignedAt = new Date();
+  report.requesterSignature = requesterSignature;
   report.status = "SUBMITTED_TO_SUPERVISOR";
   report.approvalHistory.push({
     approvalLevel: "SYSTEM",
@@ -410,7 +556,11 @@ async function updateReimbursementStatus(req, res) {
   }
 
   if (status === "completed") {
-    if (!userHasRole(req.user, "finance_admin") || report.status !== "PAYMENT_PROCESSING") {
+    if (
+      !userHasRole(req.user, "finance_admin") ||
+      (report.financeAdminId && String(report.financeAdminId) !== req.user.id) ||
+      report.status !== "PAYMENT_PROCESSING"
+    ) {
       throw new HttpError(403, "Only Finance Admin can complete payment processing");
     }
     report.status = "COMPLETED";
@@ -424,7 +574,9 @@ async function updateReimbursementStatus(req, res) {
     if (!stage) throw new HttpError(400, "This reimbursement is not awaiting an approval decision");
 
     const isAssignedApprover = stage.assignedField
-      ? String(report[stage.assignedField]) === req.user.id
+      ? String(report[stage.assignedField] || "") === req.user.id ||
+        (stage.level === "FINANCE_ADMIN" && !report[stage.assignedField] &&
+          userHasRole(req.user, stage.approverRole))
       : userHasRole(req.user, stage.approverRole);
     const hasRequiredRole =
       stage.approverRole === "line_manager"
@@ -462,12 +614,14 @@ async function updateReimbursementStatus(req, res) {
       if (status === "approved") {
         report.status = stage.approved;
         if (stage.level === "SUPERVISOR") {
+          report.supervisorSignedName = req.currentUser?.name || req.user.name;
           report.supervisorApprovedBy = req.user.id;
           report.supervisorApprovedAt = new Date();
           if (String(report.supervisorId) === String(report.lineManagerId)) {
             const approvedAt = new Date();
             report.lineManagerApprovedBy = req.user.id;
             report.lineManagerApprovedAt = approvedAt;
+            report.lineManagerSignedName = req.currentUser?.name || req.user.name;
             addApprovalHistory(report, req, {
               level: "LINE_MANAGER",
               action: "APPROVED",
@@ -483,10 +637,12 @@ async function updateReimbursementStatus(req, res) {
           }
         }
         if (stage.level === "LINE_MANAGER") {
+          report.lineManagerSignedName = req.currentUser?.name || req.user.name;
           report.lineManagerApprovedBy = req.user.id;
           report.lineManagerApprovedAt = new Date();
         }
         if (stage.level === "FINANCE_ADMIN") {
+          report.financeSignedName = req.currentUser?.name || req.user.name;
           report.financeApprovedBy = req.user.id;
           report.financeApprovedAt = new Date();
         }
@@ -658,6 +814,7 @@ function getExpenseCategories(req, res) {
 
 module.exports = {
   createReimbursement,
+  previewReimbursement,
   getMyReimbursements,
   getPendingApprovals,
   getTeamReimbursements,

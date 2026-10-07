@@ -19,6 +19,9 @@ const { loginWithMfa } = require("./mfaTestHelper");
 let app;
 let defaultBudgetHolderId;
 let defaultBudgetHolderToken;
+let defaultFinanceAdminId;
+const testRequesterSignature =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/B9sAAAAASUVORK5CYII=";
 
 async function createUser(overrides = {}) {
   const passwordHash = overrides.passwordHash || (await hashPassword("Password123!"));
@@ -84,6 +87,9 @@ function buildReimbursementPayload(travelRequestId, selectedApproverId, override
   return {
     travelRequestId,
     supervisorId: selectedApproverId,
+    financeAdminId: defaultFinanceAdminId?.toString(),
+    requesterSignedName: "Requester Signature",
+    requesterSignature: testRequesterSignature,
     baseLocation: "Nairobi",
     lineItems: [
       {
@@ -175,6 +181,13 @@ beforeEach(async () => {
     user: budgetHolderUser._id,
   });
   defaultBudgetHolderId = holder._id;
+  const financeAdmin = await createUser({
+    name: "Default Finance Admin",
+    email: `finance-admin-${Math.random().toString(36).slice(2)}@example.com`,
+    role: "admin",
+    roles: ["finance_admin"],
+  });
+  defaultFinanceAdminId = financeAdmin._id;
 });
 
 describe("reimbursement workflow", () => {
@@ -193,6 +206,14 @@ describe("reimbursement workflow", () => {
     const travelRequestId = await createApprovedTravelRequest(manager, requester);
     const requesterToken = await login(requester.email);
 
+    const preview = await request(app)
+      .post("/api/reimbursements/preview")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildReimbursementPayload(travelRequestId, manager._id));
+    expect(preview.status).toBe(200);
+    expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
+    expect((preview.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || [])).toHaveLength(3);
+
     const response = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", `Bearer ${requesterToken}`)
@@ -205,6 +226,65 @@ describe("reimbursement workflow", () => {
     expect(response.body.lineItems[1].category).toBe("HOTEL ROOM & TAXES");
     expect(response.body.employeeNumber).toBe("R691");
     expect(response.body.department).toBe("ADMIN");
+    expect(response.body.financeAdminId._id).toBe(defaultFinanceAdminId.toString());
+    expect(response.body.requesterSignedName).toBe(requester.name);
+  });
+
+  it("offers active Finance Admins and generates a one-page blank TER template", async () => {
+    const requester = await createUser({ email: "template-requester@example.com" });
+    const requesterToken = await login(requester.email);
+    const financeAdmins = await request(app)
+      .get("/api/users/finance-admins")
+      .set("Authorization", "Bearer " + requesterToken);
+    const template = await request(app)
+      .get("/api/reimbursements/template/ter.pdf")
+      .set("Authorization", "Bearer " + requesterToken);
+
+    expect(financeAdmins.status).toBe(200);
+    expect(financeAdmins.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ _id: defaultFinanceAdminId.toString() }),
+      ])
+    );
+    expect(template.status).toBe(200);
+    expect(template.headers["content-type"]).toMatch(/application\/pdf/);
+    expect((template.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || [])).toHaveLength(1);
+  });
+
+  it("rejects a reimbursement with a mismatched requester signature or unassigned Finance Admin", async () => {
+    const manager = await createUser({
+      name: "Manager Admin",
+      email: "manager-signature@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Requester Signature",
+      email: "requester-signature@example.com",
+      managerId: manager._id,
+    });
+    const travelRequestId = await createApprovedTravelRequest(manager, requester);
+    const requesterToken = await login(requester.email);
+    const invalidSignature = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(
+        buildReimbursementPayload(travelRequestId, manager._id, {
+          requesterSignature: "Someone Else",
+        })
+      );
+    const invalidFinanceAdmin = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(
+        buildReimbursementPayload(travelRequestId, manager._id, {
+          financeAdminId: new mongoose.Types.ObjectId(),
+        })
+      );
+
+    expect(invalidSignature.status).toBe(400);
+    expect(invalidSignature.body.message).toMatch(/account name|drawn signature/i);
+    expect(invalidFinanceAdmin.status).toBe(400);
+    expect(invalidFinanceAdmin.body.message).toMatch(/active Finance Admin/i);
   });
 
   it("lists expense categories for reimbursement form dropdowns", async () => {
@@ -267,7 +347,7 @@ describe("reimbursement workflow", () => {
               expenseDate: "2026-07-06T00:00:00.000Z",
               location: "Kisumu",
               category: "LUNCH",
-              amount: 800,
+              amount: 1000,
             },
           ],
         })
@@ -276,7 +356,25 @@ describe("reimbursement workflow", () => {
     expect(valid.status).toBe(201);
     expect(valid.body.lineItems[0].category).toBe("LUNCH");
     expect(valid.body.lineItems[0].description).toBe("LUNCH");
-    expect(valid.body.totalAmountKsh).toBe(800);
+    expect(valid.body.totalAmountKsh).toBe(1000);
+
+    const wrongStandardRate = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(
+        buildReimbursementPayload(travelRequestId, manager._id, {
+          lineItems: [
+            {
+              expenseDate: "2026-07-06T00:00:00.000Z",
+              location: "Kisumu",
+              category: "LUNCH",
+              amount: 800,
+            },
+          ],
+        })
+      );
+    expect(wrongStandardRate.status).toBe(400);
+    expect(wrongStandardRate.body.message).toMatch(/LUNCH must be reimbursed at KSH 1000/);
   });
 
   it("rejects reimbursement for non-approved travel requests", async () => {
@@ -594,7 +692,7 @@ describe("reimbursement workflow", () => {
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, supervisor._id));
+      .send(buildReimbursementPayload(travelRequestId, supervisor._id, { financeAdminId: finance._id }));
     const report = await ReimbursementReport.findById(created.body._id);
     report.attachments.push(
       ...["financial", "supervisor", "line_manager"].map((category) => ({
@@ -695,7 +793,7 @@ describe("reimbursement workflow", () => {
       .send({ status: "approved" });
 
     expect(approveResponse.status).toBe(200);
-    expect(approveResponse.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
+    expect(approveResponse.body.status).toBe("SUBMITTED_TO_FINANCE");
     expect(approveResponse.body.supervisorApprovedAt).toBeTruthy();
 
     const rejectManager = await createUser({
@@ -936,10 +1034,13 @@ describe("reimbursement workflow", () => {
     const supervisorToken = await login(supervisor.email);
     const managerToken = await login(manager.email);
     const financeToken = await login(finance.email);
+    const unassignedFinanceToken = await login(
+      (await User.findById(defaultFinanceAdminId)).email
+    );
     const created = await request(app)
       .post("/api/reimbursements")
       .set("Authorization", "Bearer " + requesterToken)
-      .send(buildReimbursementPayload(travelRequestId, supervisor._id));
+      .send(buildReimbursementPayload(travelRequestId, supervisor._id, { financeAdminId: finance._id }));
 
     expect(created.status).toBe(201);
     expect(created.body.status).toBe("SUBMITTED_TO_SUPERVISOR");
@@ -965,6 +1066,7 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + supervisorToken)
       .send({ status: "approved" });
     expect(supervisorApproval.body.status).toBe("SUBMITTED_TO_LINE_MANAGER");
+    expect(supervisorApproval.body.supervisorSignedName).toBe(supervisor.name);
 
     const lineManagerReview = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
@@ -976,6 +1078,17 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + managerToken)
       .send({ status: "approved" });
     expect(lineManagerApproval.body.status).toBe("SUBMITTED_TO_FINANCE");
+    expect(lineManagerApproval.body.lineManagerSignedName).toBe(manager.name);
+
+    const unassignedFinanceAccess = await request(app)
+      .get(`/api/reimbursements/${created.body._id}`)
+      .set("Authorization", "Bearer " + unassignedFinanceToken);
+    const unassignedFinanceApproval = await request(app)
+      .patch(`/api/reimbursements/${created.body._id}/status`)
+      .set("Authorization", "Bearer " + unassignedFinanceToken)
+      .send({ status: "review_started" });
+    expect(unassignedFinanceAccess.status).toBe(403);
+    expect(unassignedFinanceApproval.status).toBe(403);
 
     const financeReview = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
@@ -992,6 +1105,7 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + financeToken)
       .send({ status: "approved" });
     expect(financeApproval.body.status).toBe("PAYMENT_PROCESSING");
+    expect(financeApproval.body.financeSignedName).toBe(finance.name);
 
     const completed = await request(app)
       .patch(`/api/reimbursements/${created.body._id}/status`)
@@ -1095,7 +1209,7 @@ describe("reimbursement workflow", () => {
         expenseDate: date.toISOString(),
         location: "Kisumu",
         category: "LUNCH",
-        amount: 500,
+        amount: 1000,
       };
     });
     const accepted = await request(app)

@@ -10,6 +10,7 @@ const {
 } = require("../validators/reimbursementValidators");
 const {
   createReimbursement,
+  previewReimbursement,
   getMyReimbursements,
   getPendingApprovals,
   getTeamReimbursements,
@@ -41,6 +42,14 @@ router.get(
   "/team",
   requireRole("admin", "approver_budget_holder", "supervisor", "finance_admin", "superadmin", "auditor"),
   asyncHandler(getTeamReimbursements)
+);
+
+router.post(
+  "/preview",
+  requireRole("user", "admin", "approver_budget_holder", "superadmin", "super_superadmin"),
+  ...createReimbursementValidator,
+  validationErrorHandler,
+  asyncHandler(previewReimbursement)
 );
 
 router.post(

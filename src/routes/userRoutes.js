@@ -18,6 +18,7 @@ const {
   deleteUser,
   listApprovers,
   listSupervisors,
+  listFinanceAdmins,
   updateUserRoles,
   listPassengers,
   listBudgetHolders,
@@ -46,6 +47,7 @@ router.delete("/me/tar-draft", asyncHandler(deleteTarDraft));
 router.get("/:id/tar-draft", requireRole("superadmin"), asyncHandler(getUserTarDraft));
 router.get("/approvers", asyncHandler(listApprovers));
 router.get("/supervisors", asyncHandler(listSupervisors));
+router.get("/finance-admins", asyncHandler(listFinanceAdmins));
 router.get("/passengers", asyncHandler(listPassengers));
 router.get("/budget-holders", asyncHandler(listBudgetHolders));
 router.post(

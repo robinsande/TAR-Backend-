@@ -7,6 +7,20 @@ const selectedSupervisorValidator = body("supervisorId")
 
 const reimbursementHeaderValidators = [
   selectedSupervisorValidator,
+  body("financeAdminId")
+    .isMongoId()
+    .withMessage("A valid Finance Admin is required"),
+  body("requesterSignedName")
+    .isString()
+    .trim()
+    .notEmpty()
+    .withMessage("Your signature is required"),
+  body("requesterSignature")
+    .isString()
+    .trim()
+    .notEmpty()
+    .isLength({ max: 1500000 })
+    .withMessage("Draw or type your signature before continuing"),
   body("baseLocation").isString().notEmpty().withMessage("Base location is required"),
   body("employeeNumber").optional().isString(),
   body("department").optional().isString(),

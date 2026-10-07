@@ -77,6 +77,17 @@ const reimbursementReportSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    financeAdminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    requesterSignedName: { type: String, trim: true, default: null },
+    requesterSignedAt: { type: Date, default: Date.now },
+    requesterSignature: { type: String, trim: true, default: null },
+    supervisorSignedName: { type: String, trim: true, default: null },
+    lineManagerSignedName: { type: String, trim: true, default: null },
+    financeSignedName: { type: String, trim: true, default: null },
     attachments: {
       type: [{
         category: {
@@ -212,6 +223,7 @@ reimbursementReportSchema.index({ submittedBy: 1, createdAt: -1 });
 reimbursementReportSchema.index({ selected_approver_id: 1, status: 1 });
 reimbursementReportSchema.index({ supervisorId: 1, status: 1 });
 reimbursementReportSchema.index({ lineManagerId: 1, status: 1 });
+reimbursementReportSchema.index({ financeAdminId: 1, status: 1 });
 
 reimbursementReportSchema.pre(
   ["findOneAndDelete", "deleteOne"],

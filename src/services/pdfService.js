@@ -400,6 +400,73 @@ function signatureBlock(doc, columns) {
   doc.fillColor("#000000");
 }
 
+function paymentRequestSignatureBlock(doc, signatures) {
+  ensureSpace(doc, 96);
+  const gap = 8;
+  const colWidth = (contentWidth() - gap * (signatures.length - 1)) / signatures.length;
+  const startY = doc.y;
+
+  signatures.forEach((signature, index) => {
+    const x = PAGE.margin + index * (colWidth + gap);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(7.5)
+      .text(signature.title, x, startY, { width: colWidth, height: 20 });
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .text(`Name: ${dash(signature.name)}`, x, startY + 20, {
+        width: colWidth,
+        height: 14,
+        ellipsis: true,
+      });
+
+    if (signature.signature?.startsWith("data:image/png;base64,")) {
+      const imageBytes = Buffer.from(signature.signature.slice("data:image/png;base64,".length), "base64");
+      doc.image(imageBytes, x + 2, startY + 35, {
+        fit: [colWidth - 4, 27],
+        align: "left",
+        valign: "center",
+      });
+    } else if (signature.signature) {
+      doc
+        .font("Helvetica-Oblique")
+        .fontSize(10)
+        .fillColor("#1646a0")
+        .text(signature.signature, x + 2, startY + 39, {
+          width: colWidth - 4,
+          height: 20,
+          ellipsis: true,
+        });
+    } else {
+      doc
+        .font("Helvetica")
+        .fontSize(7)
+        .fillColor("#555555")
+        .text("Pending", x + 2, startY + 41, { width: colWidth - 4 });
+    }
+
+    doc
+      .moveTo(x, startY + 64)
+      .lineTo(x + colWidth - 4, startY + 64)
+      .strokeColor("#555555")
+      .lineWidth(0.7)
+      .stroke();
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .fillColor("#333333")
+      .text(`Date: ${dash(signature.date)}`, x, startY + 68, {
+        width: colWidth,
+        height: 12,
+        ellipsis: true,
+      });
+  });
+
+  doc.y = startY + 84;
+  doc.fillColor("#000000");
+}
+
 function streamPdf(res, filename, buildContent, options = {}) {
   const doc = new PDFDocument({
     margin: PAGE.margin,
@@ -744,39 +811,30 @@ function drawPaymentRequestPage(doc, report) {
   doc.fillColor("#000000");
   doc.moveDown(0.6);
 
-  signatureBlock(doc, [
+  paymentRequestSignatureBlock(doc, [
     {
-      title: "Prepared by:",
-      lines: [
-        { label: "Name", value: submitter.name },
-        {
-          label: "Designation",
-          value: report.position || submitter.position,
-        },
-        { label: "Date", value: formatDate(report.submittedAt) },
-      ],
+      title: "REQUESTER — PREPARED BY",
+      name: report.requesterSignedName || submitter.name,
+      signature: report.requesterSignature,
+      date: formatDate(report.requesterSignedAt || report.submittedAt),
     },
     {
-      title: "Reviewed by:",
-      lines: [
-        {
-          label: "Name",
-          value: report.selected_approver_id?.name,
-        },
-        { label: "Designation", value: report.selected_approver_id?.position },
-        { label: "Date", value: formatDate(report.decision?.decidedAt) },
-      ],
+      title: "SUPERVISOR — REVIEWED BY",
+      name: report.supervisorId?.name,
+      signature: report.supervisorSignedName,
+      date: formatDate(report.supervisorApprovedAt),
     },
     {
-      title: "Approved by:",
-      lines: [
-        { label: "Name", value: report.decision?.decidedBy?.name },
-        {
-          label: "Designation",
-          value: report.decision?.decidedBy?.position,
-        },
-        { label: "Date", value: formatDate(report.decision?.decidedAt) },
-      ],
+      title: "LINE MANAGER — REVIEWED BY",
+      name: report.lineManagerId?.name,
+      signature: report.lineManagerSignedName,
+      date: formatDate(report.lineManagerApprovedAt),
+    },
+    {
+      title: "FINANCE — APPROVED BY",
+      name: report.financeAdminId?.name,
+      signature: report.financeSignedName,
+      date: formatDate(report.financeApprovedAt),
     },
   ]);
 
@@ -1157,7 +1215,10 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
     .font("Helvetica")
     .fontSize(6)
     .fillColor("#444444")
-    .text(`Page ${pageIndex} of ${pageCount}`, tableX, pageHeight - 13, { width: tableWidth, align: "right" });
+    .text(`Page ${pageIndex} of ${pageCount}`, tableX, pageHeight - 56, {
+      width: tableWidth,
+      align: "right",
+    });
 }
 
 function drawTravelExpenseReportPages(doc, report) {

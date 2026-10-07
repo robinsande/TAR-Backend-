@@ -22,7 +22,13 @@ async function buildReimbursementTeamScope(user) {
     return { supervisorId: user.id };
   }
   if (user.roles?.includes("finance_admin")) {
-    return { status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW", "PAYMENT_PROCESSING", "COMPLETED"] } };
+    return {
+      $or: [
+        { financeAdminId: user.id },
+        { financeAdminId: null },
+      ],
+      status: { $in: ["SUBMITTED_TO_FINANCE", "FINANCE_REVIEW", "FINANCE_APPROVED", "FINANCE_DECLINED", "PAYMENT_PROCESSING", "COMPLETED"] },
+    };
   }
   if (!["admin", "approver_budget_holder"].includes(user.role)) {
     return { submittedBy: user.id };
@@ -58,7 +64,7 @@ async function canAccessReport(user, report) {
   }
 
   if (user.roles?.includes("finance_admin")) {
-    return [
+    return (!report.financeAdminId || idToString(report.financeAdminId) === user.id) && [
       "SUBMITTED_TO_FINANCE",
       "FINANCE_REVIEW",
       "FINANCE_APPROVED",

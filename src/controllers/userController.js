@@ -341,6 +341,16 @@ async function listSupervisors(req, res) {
   return res.json(supervisors);
 }
 
+async function listFinanceAdmins(req, res) {
+  const financeAdmins = await User.find({
+    $or: [{ roles: "finance_admin" }, { role: "finance_admin" }],
+    isActive: true,
+  })
+    .select("name email employeeNumber position department role roles")
+    .sort({ name: 1 });
+  return res.json(financeAdmins);
+}
+
 async function updateUserRoles(req, res) {
   const roles = [...new Set(req.body.roles || [])];
   if (roles.some((role) => !["supervisor", "finance_admin", "auditor"].includes(role))) {
@@ -382,6 +392,7 @@ module.exports = {
   deleteUser,
   listApprovers,
   listSupervisors,
+  listFinanceAdmins,
   updateUserRoles,
   listPassengers,
   listBudgetHolders,

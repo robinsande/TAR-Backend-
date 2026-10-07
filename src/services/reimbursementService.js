@@ -9,6 +9,7 @@ function getReimbursementPopulateQuery(query) {
     .populate("selected_approver_id", "-passwordHash")
     .populate("supervisorId", "-passwordHash")
     .populate("lineManagerId", "-passwordHash")
+    .populate("financeAdminId", "-passwordHash")
     .populate("decision.decidedBy", "-passwordHash")
     .populate("approvalHistory.performedBy", "name email role");
 }
@@ -99,6 +100,10 @@ function buildReimbursementDraftData(
     selected_approver_id: lineManagerId,
     supervisorId,
     lineManagerId,
+    financeAdminId: payload.financeAdminId,
+    requesterSignedName: payload.requesterSignedName,
+    requesterSignedAt: new Date(),
+    requesterSignature: payload.requesterSignature,
     employeeNumber: payload.employeeNumber || fallbackProfile.employeeNumber || "N/A",
     department: payload.department || fallbackProfile.department || "N/A",
     position: payload.position || fallbackProfile.position || "N/A",
