@@ -863,7 +863,7 @@ function drawPaymentRequestPage(doc, report) {
   };
 
   drawBox(doc, margin - 5, 7, width + 10, pageHeight - 14, { lineWidth: 1.1 });
-  drawCareLogo(doc, { x: margin + 4, y: 15, width: 58 });
+  drawCareLogo(doc, { x: margin + 8, y: 13, width: 40 });
   doc
     .font("Helvetica-Bold")
     .fontSize(12)
