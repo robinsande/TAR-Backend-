@@ -808,13 +808,7 @@ function buildTravelRequestsPdf(res, requestDocuments) {
 
 function drawPaymentRequestPage(doc, report) {
   const travel = report.travelRequest || {};
-  const project = {
-    ...(travel.project || {}),
-    fundCode: report.peopleSoftFundCode ?? travel.project?.fundCode,
-    projectId: report.peopleSoftProjectId ?? travel.project?.projectId,
-    activityId: report.peopleSoftActivityId ?? travel.project?.activityId,
-    departmentId: report.peopleSoftDepartmentId ?? travel.project?.departmentId,
-  };
+  const project = getVoucherProject(report);
   const submitter = report.submittedBy || {};
   const total = Number(report.totalAmountKsh || 0);
   const paymentDetails = report.paymentDetails || {};
@@ -1141,6 +1135,17 @@ function drawPaymentRequestPage(doc, report) {
   doc.y = Math.min(564, pageHeight - margin);
 }
 
+function getVoucherProject(report) {
+  const project = report.travelRequest?.project || {};
+  return {
+    ...project,
+    fundCode: report.peopleSoftFundCode ?? project.fundCode,
+    projectId: report.peopleSoftProjectId ?? project.projectId,
+    activityId: report.peopleSoftActivityId ?? project.activityId,
+    departmentId: report.peopleSoftDepartmentId ?? project.departmentId,
+  };
+}
+
 function getVoucherExpenseDescription(destination) {
   const location = String(destination || "").trim();
   return location ? `Per diem while in ${location}` : "Per diem";
@@ -1240,11 +1245,8 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
   });
   y += headerHeight;
 
-  const maxVisibleDays = layout.maxRows;
-  const hasAdditionalDays = daysWithItems.length > maxVisibleDays;
-  const visibleDays = hasAdditionalDays
-    ? daysWithItems.slice(0, maxVisibleDays - 1)
-    : daysWithItems;
+  const startIndex = layout.startIndex || 0;
+  const visibleDays = daysWithItems.slice(startIndex, startIndex + layout.maxRows);
   const rows = visibleDays.length
     ? visibleDays.map((day) =>
         buildVoucherDailySummary(
@@ -1255,21 +1257,6 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
         )
       )
     : [["—", "No line items", "0.00", "—", report.peopleSoftAccount, project.fundCode, project.projectId, project.activityId, project.departmentId]];
-
-  if (hasAdditionalDays) {
-    const remainingDays = daysWithItems.slice(maxVisibleDays - 1);
-    rows.push([
-      "See TER",
-      `${getVoucherExpenseDescription(report.travelRequest?.itinerary?.destination)} (${remainingDays.length} additional days)`,
-      formatCurrency(remainingDays.reduce((sum, day) => sum + day.total, 0)),
-      "See TER",
-      report.peopleSoftAccount,
-      project.fundCode,
-      project.projectId,
-      project.activityId,
-      project.departmentId,
-    ]);
-  }
 
   while (rows.length < layout.maxRows) {
     rows.push(["", "", "", "", "", "", "", "", ""]);
@@ -1287,8 +1274,8 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
   });
 
   x = tableX;
-  const dailyTotal = daysWithItems.reduce((sum, day) => sum + day.total, 0);
-  ["TOTAL BY DATE", "", formatCurrency(dailyTotal), "", "", "", "", "", ""].forEach((value, index) => {
+  const pageTotal = visibleDays.reduce((sum, day) => sum + day.total, 0);
+  [layout.totalLabel || "TOTAL BY DATE", "", formatCurrency(pageTotal), "", "", "", "", "", ""].forEach((value, index) => {
     drawCell(x, y, widths[index], 15, value, {
       bold: true,
       fill: "#cccccc",
@@ -1298,6 +1285,46 @@ function drawPaymentRequestExpenseSummary(doc, report, project, layout) {
     x += widths[index];
   });
   doc.y = y + 15;
+}
+
+function drawPaymentVoucherContinuationPages(doc, report) {
+  const days = buildTerDayBuckets(report.lineItems || []);
+  const daysPerContinuationPage = 20;
+  if (days.length <= 10) return;
+
+  const project = getVoucherProject(report);
+  const pageWidth = doc.page.width;
+  const tableWidth = pageWidth - 34;
+  for (let startIndex = 10; startIndex < days.length; startIndex += daysPerContinuationPage) {
+    doc.addPage({ size: "A4", layout: "landscape", margin: PAGE.margin });
+    drawCareLogo(doc, { x: 25, y: 13, width: 40 });
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(12)
+      .text("PAYMENT VOUCHER FORM — EXPENSE DETAILS (CONTINUED)", 75, 22, {
+        width: tableWidth - 100,
+        align: "center",
+        height: 16,
+      });
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(`Per diem while in ${report.travelRequest?.itinerary?.destination || "destination"}`, 75, 40, {
+        width: tableWidth - 100,
+        align: "center",
+        height: 10,
+      });
+
+    drawPaymentRequestExpenseSummary(doc, report, project, {
+      x: 17,
+      y: 60,
+      width: tableWidth,
+      maxRows: daysPerContinuationPage,
+      rowHeight: 16,
+      startIndex,
+      totalLabel: "TOTAL FOR THESE DATES",
+    });
+  }
 }
 
 function classifyExpenseDescription(description = "") {
@@ -1710,6 +1737,7 @@ async function buildReimbursementPdf(res, report, expenseDocuments = []) {
   const filename = `reimbursement-${report._id}.pdf`;
   const basePdf = await createPdfBuffer((doc) => {
     drawPaymentRequestPage(doc, report);
+    drawPaymentVoucherContinuationPages(doc, report);
     drawTravelExpenseReportPages(doc, report);
     if (report.travelRequest) {
       doc.addPage({ size: "A4", layout: "portrait", margin: PAGE.margin });
@@ -1756,7 +1784,10 @@ function buildPaymentVoucherPdf(res, report) {
   streamPdf(
     res,
     `payment-voucher-${report._id}.pdf`,
-    (doc) => drawPaymentRequestPage(doc, report),
+    (doc) => {
+      drawPaymentRequestPage(doc, report);
+      drawPaymentVoucherContinuationPages(doc, report);
+    },
     { layout: "landscape" }
   );
 }

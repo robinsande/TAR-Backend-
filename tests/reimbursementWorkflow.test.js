@@ -1551,14 +1551,13 @@ describe("reimbursement workflow", () => {
       .set("Authorization", "Bearer " + requesterToken);
     expect(voucherPdf.status).toBe(200);
     expect(voucherPdf.headers["content-type"]).toMatch(/application\/pdf/);
-    expect((voucherPdf.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || []))
-      .toHaveLength(1);
+    expect(await getPdfPageCount(voucherPdf.body)).toBe(2);
 
     const reimbursementPdf = await request(app)
       .get(`/api/reimbursements/${accepted.body._id}/pdf`)
       .set("Authorization", "Bearer " + requesterToken);
     expect(reimbursementPdf.status).toBe(200);
-    expect(await getPdfPageCount(reimbursementPdf.body)).toBe(5);
+    expect(await getPdfPageCount(reimbursementPdf.body)).toBe(6);
 
     const overLimitTravelRequestId = await createApprovedTravelRequest(manager, requester);
     const response = await request(app)
