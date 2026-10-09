@@ -1554,6 +1554,12 @@ describe("reimbursement workflow", () => {
     expect((voucherPdf.body.toString("latin1").match(/\/Type\s*\/Page\b/g) || []))
       .toHaveLength(1);
 
+    const reimbursementPdf = await request(app)
+      .get(`/api/reimbursements/${accepted.body._id}/pdf`)
+      .set("Authorization", "Bearer " + requesterToken);
+    expect(reimbursementPdf.status).toBe(200);
+    expect(await getPdfPageCount(reimbursementPdf.body)).toBe(5);
+
     const overLimitTravelRequestId = await createApprovedTravelRequest(manager, requester);
     const response = await request(app)
       .post("/api/reimbursements")

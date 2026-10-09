@@ -1687,8 +1687,9 @@ function drawTerLandscapePage(doc, report, days, pageIndex, pageCount, priorTota
 function drawTravelExpenseReportPages(doc, report) {
   const days = buildTerDayBuckets(report.lineItems || []);
   const dayPages = [];
-  for (let index = 0; index < Math.max(1, days.length); index += 6) {
-    dayPages.push(days.slice(index, index + 6));
+  const daysPerPage = 10;
+  for (let index = 0; index < Math.max(1, days.length); index += daysPerPage) {
+    dayPages.push(days.slice(index, index + daysPerPage));
   }
   const allTotal = Number(report.totalAmountKsh || 0);
   let priorTotal = 0;
@@ -1765,7 +1766,7 @@ function buildEmptyTravelExpenseReportPdf(res) {
     res,
     "travel-expense-report-template.pdf",
     (doc) => {
-      drawTerLandscapePage(doc, {}, Array(6).fill(null), 1, 1, 0, 0, 0);
+      drawTerLandscapePage(doc, {}, Array(10).fill(null), 1, 1, 0, 0, 0);
     },
     { layout: "landscape" }
   );

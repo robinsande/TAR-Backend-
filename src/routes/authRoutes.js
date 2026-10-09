@@ -4,6 +4,7 @@ const asyncHandler = require("../utils/asyncHandler");
 const {
   login,
   setupMfa,
+  setupMfaReset,
   verifyMfa,
   activateAccount,
   setPassword,
@@ -13,6 +14,7 @@ const {
   activateAccountValidator,
   setPasswordValidator,
   verifyMfaValidator,
+  resetMfaValidator,
 } = require("../validators/authValidators");
 const { validationErrorHandler } = require("../middleware/errorHandler");
 const { authenticate } = require("../middleware/authMiddleware");
@@ -41,6 +43,14 @@ router.use(authLimiter);
 
 router.post("/login", ...loginValidator, validationErrorHandler, asyncHandler(login));
 router.post("/mfa/setup", mfaLimiter, asyncHandler(setupMfa));
+router.post(
+  "/mfa/reset/setup",
+  authenticate,
+  mfaLimiter,
+  resetMfaValidator,
+  validationErrorHandler,
+  asyncHandler(setupMfaReset)
+);
 router.post(
   "/mfa/verify",
   mfaLimiter,

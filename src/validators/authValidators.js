@@ -36,9 +36,17 @@ const verifyMfaValidator = [
     .withMessage("Enter the six-digit code from your authenticator app"),
 ];
 
+const resetMfaValidator = [
+  body("currentPassword")
+    .isString()
+    .isLength({ min: 1 })
+    .withMessage("Current password is required"),
+];
+
 module.exports = {
   loginValidator,
   activateAccountValidator,
   setPasswordValidator,
   verifyMfaValidator,
+  resetMfaValidator,
 };

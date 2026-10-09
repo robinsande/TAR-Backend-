@@ -140,6 +140,37 @@ async function setupMfa(req, res) {
   return res.json(setup);
 }
 
+async function setupMfaReset(req, res) {
+  const user = await User.findById(req.user.id).select(
+    "+passwordHash +mfaSecretEncrypted +mfaPendingSecretEncrypted +mfaChallengeId"
+  );
+  if (!user || !user.isActive || !user.passwordHash || !user.mfaEnabled || !user.mfaSecretEncrypted) {
+    throw new HttpError(400, "Authenticator verification is not enabled for this account");
+  }
+
+  const passwordMatches = await bcrypt.compare(req.body.currentPassword, user.passwordHash);
+  if (!passwordMatches) {
+    throw new HttpError(401, "Invalid current password");
+  }
+
+  const secret = generateAuthenticatorSecret();
+  const setup = await createAuthenticatorQrCode(secret, user.email);
+  const challengeId = crypto.randomUUID();
+  user.mfaPendingSecretEncrypted = encryptAuthenticatorSecret(secret);
+  user.mfaChallengeId = challengeId;
+  await user.save();
+
+  return res.json({
+    ...setup,
+    challengeToken: signMfaChallengeToken({
+      userId: user._id.toString(),
+      role: user.role,
+      purpose: "reset",
+      jti: challengeId,
+    }),
+  });
+}
+
 async function verifyMfa(req, res) {
   const authHeader = req.headers.authorization || "";
   let payload;
@@ -149,16 +180,20 @@ async function verifyMfa(req, res) {
     throw new HttpError(401, "Your sign-in verification expired. Please sign in again.");
   }
 
-  if (payload.tokenType !== "mfa_challenge" || !["enroll", "login"].includes(payload.purpose)) {
+  if (payload.tokenType !== "mfa_challenge" || !["enroll", "login", "reset"].includes(payload.purpose)) {
     throw new HttpError(401, "Invalid authenticator verification session");
   }
 
   const user = await getMfaChallengeUser(req, payload.purpose);
   const encryptedSecret =
-    payload.purpose === "enroll"
+    payload.purpose === "enroll" || payload.purpose === "reset"
       ? user.mfaPendingSecretEncrypted
       : user.mfaSecretEncrypted;
-  if (!encryptedSecret || (payload.purpose === "login" && !user.mfaEnabled)) {
+  if (
+    !encryptedSecret ||
+    (payload.purpose === "login" && !user.mfaEnabled) ||
+    (payload.purpose === "reset" && !user.mfaEnabled)
+  ) {
     throw new HttpError(400, "Authenticator setup is incomplete. Please sign in again.");
   }
 
@@ -173,8 +208,8 @@ async function verifyMfa(req, res) {
     mfaChallengeId: payload.jti,
     isActive: true,
   };
-  if (payload.purpose === "enroll") {
-    challengeFilter.mfaEnabled = false;
+  if (payload.purpose === "enroll" || payload.purpose === "reset") {
+    challengeFilter.mfaEnabled = payload.purpose === "reset";
     update.mfaSecretEncrypted = user.mfaPendingSecretEncrypted;
     update.mfaPendingSecretEncrypted = null;
     update.mfaEnabled = true;
@@ -268,6 +303,7 @@ async function setPassword(req, res) {
 module.exports = {
   login,
   setupMfa,
+  setupMfaReset,
   verifyMfa,
   activateAccount,
   setPassword,

@@ -272,6 +272,55 @@ describe("account activation", () => {
       .send({ code: generateTotpCode(secret) });
     expect(replayedChallenge.status).toBe(401);
   });
+
+  it("replaces an enabled authenticator only after the new code is verified", async () => {
+    await User.create({
+      name: "MFA Reset User",
+      email: "mfa-reset@example.com",
+      role: "user",
+      isActive: true,
+      passwordHash: await hashPassword("SecurePass123!"),
+    });
+
+    const sessionToken = await loginWithMfa(app, "mfa-reset@example.com", "SecurePass123!");
+    const userBeforeReset = await User.findOne({ email: "mfa-reset@example.com" })
+      .select("+mfaSecretEncrypted");
+    const oldSecret = decryptAuthenticatorSecret(userBeforeReset.mfaSecretEncrypted);
+
+    const rejectedSetup = await request(app)
+      .post("/api/auth/mfa/reset/setup")
+      .set("Authorization", `Bearer ${sessionToken}`)
+      .send({ currentPassword: "WrongPass123!" });
+    expect(rejectedSetup.status).toBe(401);
+
+    const setup = await request(app)
+      .post("/api/auth/mfa/reset/setup")
+      .set("Authorization", `Bearer ${sessionToken}`)
+      .send({ currentPassword: "SecurePass123!" });
+    expect(setup.status).toBe(200);
+    expect(setup.body.qrCodeDataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(setup.body.challengeToken).toBeTruthy();
+    expect(setup.body.manualEntryKey).not.toBe(oldSecret);
+
+    const unverifiedUser = await User.findOne({ email: "mfa-reset@example.com" })
+      .select("+mfaSecretEncrypted +mfaPendingSecretEncrypted");
+    expect(decryptAuthenticatorSecret(unverifiedUser.mfaSecretEncrypted)).toBe(oldSecret);
+    expect(decryptAuthenticatorSecret(unverifiedUser.mfaPendingSecretEncrypted))
+      .toBe(setup.body.manualEntryKey);
+
+    const verifiedReset = await request(app)
+      .post("/api/auth/mfa/verify")
+      .set("Authorization", `Bearer ${setup.body.challengeToken}`)
+      .send({ code: generateTotpCode(setup.body.manualEntryKey) });
+    expect(verifiedReset.status).toBe(200);
+    expect(verifiedReset.body.token).toBeTruthy();
+
+    const resetUser = await User.findOne({ email: "mfa-reset@example.com" })
+      .select("+mfaSecretEncrypted +mfaPendingSecretEncrypted");
+    expect(decryptAuthenticatorSecret(resetUser.mfaSecretEncrypted))
+      .toBe(setup.body.manualEntryKey);
+    expect(resetUser.mfaPendingSecretEncrypted).toBeNull();
+  });
 });
 
 describe("set password", () => {
