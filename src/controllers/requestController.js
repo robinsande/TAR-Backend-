@@ -48,6 +48,27 @@ async function resolveApproversForRequest(approverIds, requesterId, passengers) 
   throw new HttpError(400, "Select an active admin approver before submitting this request");
 }
 
+function applyRequesterBudgetHolderApproval(requestDocument, requester, budgetHolder, signature) {
+  const budgetHolderUserId = budgetHolder?.user?._id || budgetHolder?.user;
+  if (!budgetHolderUserId || String(budgetHolderUserId) !== String(requester._id)) {
+    return false;
+  }
+
+  const decidedAt = new Date();
+  const requesterSignature = String(signature || "").trim() || requester.name.trim();
+  requestDocument.requesterSignature = requesterSignature;
+  requestDocument.approvalStage = "line_manager";
+  requestDocument.budgetHolderDecision = {
+    status: "approved",
+    decidedBy: requester._id,
+    decidedAt,
+    comment: "Automatically approved because the requester is the selected budget holder",
+    signature: requesterSignature,
+    submittedFundCode: requestDocument.project.fundCode,
+  };
+  return true;
+}
+
 async function createRequest(req, res) {
   const requester = await User.findById(req.user.id);
 
@@ -99,6 +120,12 @@ async function createRequest(req, res) {
     passengers,
     submittedAt: new Date(),
   });
+  const requesterIsBudgetHolder = applyRequesterBudgetHolderApproval(
+    requestDocument,
+    requester,
+    budgetHolder,
+    req.body.requesterSignature
+  );
 
   await createAuditLog({
     action: "request_created",
@@ -106,6 +133,19 @@ async function createRequest(req, res) {
     targetRequest: requestDocument._id,
     metadata: { status: requestDocument.status },
   });
+  if (requesterIsBudgetHolder) {
+    await createAuditLog({
+      action: "request_budget_holder_approved",
+      performedBy: requester._id,
+      targetRequest: requestDocument._id,
+      metadata: {
+        fundCode: requestDocument.project.fundCode,
+        comment: requestDocument.budgetHolderDecision.comment,
+        signature: requestDocument.budgetHolderDecision.signature,
+        automaticallyApprovedBecauseRequesterIsBudgetHolder: true,
+      },
+    });
+  }
 
   await notifyTravelRequestPassengers(requestDocument, "new_request");
   const approverNotification = await notifyTravelRequestApprover(
@@ -613,6 +653,12 @@ async function resubmitRequest(req, res) {
   });
 
   applyRequestResubmission(requestDocument, req.body, approvers, passengers, budgetHolder);
+  const requesterIsBudgetHolder = applyRequesterBudgetHolderApproval(
+    requestDocument,
+    requestDocument.requestedBy,
+    budgetHolder,
+    req.body.requesterSignature
+  );
   requestDocument.lastApprovalReminderAt = null;
 
   await requestDocument.save();
@@ -623,6 +669,19 @@ async function resubmitRequest(req, res) {
     targetRequest: requestDocument._id,
     metadata: { version: requestDocument.version },
   });
+  if (requesterIsBudgetHolder) {
+    await createAuditLog({
+      action: "request_budget_holder_approved",
+      performedBy: requestDocument.requestedBy._id,
+      targetRequest: requestDocument._id,
+      metadata: {
+        fundCode: requestDocument.project.fundCode,
+        comment: requestDocument.budgetHolderDecision.comment,
+        signature: requestDocument.budgetHolderDecision.signature,
+        automaticallyApprovedBecauseRequesterIsBudgetHolder: true,
+      },
+    });
+  }
 
   await notifyTravelRequestPassengers(requestDocument, "resubmitted");
   const approverNotification = await notifyTravelRequestApprover(

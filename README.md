@@ -7,6 +7,7 @@ Express and MongoDB backend for the CARE Kenya travel authority request workflow
 - Account activation flow: imported users must set a password before logging in.
 - Approver selection via `selected_approver_id` (eligible admins), enforced on the server.
 - Travel request lifecycle support for create, approve, reject, and rejected-request resubmit.
+- TARs go to the selected budget holder before line-manager approval. When the requester is also the selected budget holder, their requester and budget-holder signature fields are completed at submission and the TAR goes directly to the selected line manager(s).
 - Reimbursements with sequential TAR Budget Holder approval and distinct Line Manager acknowledgement of uploaded travel documents. Once all in-system approvals are complete, the requester is notified to download the merged package and email it to Finance for payment processing. When the Line Manager and Budget Holder are the same person, the acknowledgement is skipped. A copied Finance Admin acknowledges after Finance approves and payment processing begins.
 - Read-only Auditor access to organization-wide TARs, reimbursements, and supporting documents.
 - In-app notifications plus Brevo email notifications.

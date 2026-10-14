@@ -343,6 +343,60 @@ describe("user profile updates", () => {
 });
 
 describe("request scoping and workflow", () => {
+  it("auto-signs a budget holder's own TAR and sends it directly to the selected line manager", async () => {
+    sendEmail.mockClear();
+    const manager = await createUser({
+      name: "Selected Line Manager",
+      email: "self-budget-holder-manager@example.com",
+      role: "admin",
+    });
+    const passenger = await createUser({
+      name: "Travel Passenger",
+      email: "self-budget-holder-passenger@example.com",
+    });
+    const holder = await BudgetHolder.findById(defaultBudgetHolderId);
+
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send(buildRequestPayload(manager._id, {
+        passengers: [passengerFor(passenger)],
+        requesterSignature: "",
+      }));
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.status).toBe("pending");
+    expect(createResponse.body.approvalStage).toBe("line_manager");
+    expect(createResponse.body.requesterSignature).toBe(holder.name);
+    expect(createResponse.body.budgetHolderDecision).toMatchObject({
+      status: "approved",
+      decidedBy: expect.objectContaining({ _id: String(holder.user) }),
+      comment: "Automatically approved because the requester is the selected budget holder",
+      signature: holder.name,
+      submittedFundCode: "DEC16",
+    });
+    expect(createResponse.body.budgetHolderDecision.decidedAt).toBeTruthy();
+
+    const managerEmail = sendEmail.mock.calls.find(
+      ([recipient, subject]) =>
+        recipient === manager.email &&
+        subject === "New travel request awaiting approval"
+    );
+    expect(managerEmail).toBeTruthy();
+    expect(sendEmail.mock.calls.some(
+      ([recipient, subject]) =>
+        recipient === holder.email &&
+        subject === "TAR awaiting your review and approval"
+    )).toBe(false);
+
+    const managerToken = await login(manager.email);
+    const managerQueue = await request(app)
+      .get("/api/requests/pending-my-approval")
+      .set("Authorization", "Bearer " + managerToken);
+    expect(managerQueue.status).toBe(200);
+    expect(managerQueue.body.map((item) => item._id)).toContain(createResponse.body._id);
+  });
+
   it("requires budget-holder approval before notifying or exposing a TAR to its line manager", async () => {
     const manager = await createUser({
       name: "Manager Admin",
