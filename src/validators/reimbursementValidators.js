@@ -45,7 +45,6 @@ const reimbursementHeaderValidators = [
   body("peopleSoftProjectId").optional().isString().isLength({ max: 80 }),
   body("peopleSoftActivityId").optional().isString().isLength({ max: 80 }),
   body("peopleSoftDepartmentId").optional().isString().isLength({ max: 80 }),
-  body("peopleSoftVehicleRepairAccount").optional().isString().isLength({ max: 80 }),
   body("paymentDetails.paymentMethod")
     .equals("mpesa")
     .withMessage("M-PESA is the supported reimbursement payment method"),
@@ -76,6 +75,11 @@ const reimbursementLineItemValidators = [
     .isString()
     .isLength({ max: 100 })
     .withMessage("Invoice number must be 100 characters or fewer"),
+  body("lineItems.*.vehicleRepairPeopleSoftAccount")
+    .optional({ values: "falsy" })
+    .isString()
+    .isLength({ max: 80 })
+    .withMessage("Vehicle repair PeopleSoft Account must be 80 characters or fewer"),
   body("lineItems.*.amount")
     .isFloat({ min: 0.01 })
     .withMessage("Each line item amount must be greater than zero"),

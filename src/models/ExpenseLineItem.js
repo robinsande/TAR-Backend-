@@ -33,6 +33,12 @@ const expenseLineItemSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    vehicleRepairPeopleSoftAccount: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 80,
+    },
     amount: {
       type: mongoose.Schema.Types.Decimal128,
       required: true,

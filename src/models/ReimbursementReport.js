@@ -109,7 +109,6 @@ const reimbursementReportSchema = new mongoose.Schema(
     requesterSignature: { type: String, trim: true, default: null },
     paymentRequestPurpose: { type: String, trim: true, default: null },
     peopleSoftAccount: { type: String, trim: true, default: "", maxlength: 80 },
-    peopleSoftVehicleRepairAccount: { type: String, trim: true, default: "", maxlength: 80 },
     peopleSoftFundCode: { type: String, trim: true, default: "", maxlength: 80 },
     peopleSoftProjectId: { type: String, trim: true, default: "", maxlength: 80 },
     peopleSoftActivityId: { type: String, trim: true, default: "", maxlength: 80 },

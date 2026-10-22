@@ -34,6 +34,9 @@ function normalizeLineItems(lineItems = []) {
       category,
       description,
       invoiceNumber: String(item.invoiceNumber || "").trim(),
+      vehicleRepairPeopleSoftAccount: ["VEHICLE FUEL", "VEHICLE MAINTENANCE"].includes(category)
+        ? String(item.vehicleRepairPeopleSoftAccount || "").trim()
+        : "",
       amount: toDecimal128(item.amount),
     };
   });
@@ -110,7 +113,6 @@ function buildReimbursementDraftData(
     financeCcAdminId: null,
     paymentRequestPurpose: payload.paymentRequestPurpose,
     peopleSoftAccount: String(payload.peopleSoftAccount || "").trim(),
-    peopleSoftVehicleRepairAccount: String(payload.peopleSoftVehicleRepairAccount || "").trim(),
     peopleSoftFundCode: String(payload.peopleSoftFundCode || "").trim(),
     peopleSoftProjectId: String(payload.peopleSoftProjectId || "").trim(),
     peopleSoftActivityId: String(payload.peopleSoftActivityId || "").trim(),
@@ -153,7 +155,6 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
     financeCcAdminId: report.financeCcAdminId,
     paymentRequestPurpose: report.paymentRequestPurpose,
     peopleSoftAccount: report.peopleSoftAccount,
-    peopleSoftVehicleRepairAccount: report.peopleSoftVehicleRepairAccount,
     peopleSoftFundCode: report.peopleSoftFundCode,
     peopleSoftProjectId: report.peopleSoftProjectId,
     peopleSoftActivityId: report.peopleSoftActivityId,
@@ -170,6 +171,7 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
       category: item.category,
       description: item.description,
       invoiceNumber: item.invoiceNumber,
+      vehicleRepairPeopleSoftAccount: item.vehicleRepairPeopleSoftAccount || "",
       amount: item.amount,
     })),
   };
@@ -190,7 +192,6 @@ function applyReimbursementResubmission(report, payload, supervisorId) {
   report.position = payload.position || report.position;
   report.baseLocation = payload.baseLocation;
   report.peopleSoftAccount = String(payload.peopleSoftAccount || "").trim();
-  report.peopleSoftVehicleRepairAccount = String(payload.peopleSoftVehicleRepairAccount || "").trim();
   report.peopleSoftFundCode = String(payload.peopleSoftFundCode || "").trim();
   report.peopleSoftProjectId = String(payload.peopleSoftProjectId || "").trim();
   report.peopleSoftActivityId = String(payload.peopleSoftActivityId || "").trim();

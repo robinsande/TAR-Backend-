@@ -10,6 +10,7 @@ const { PDFDocument: TestPDFDocument } = require("pdf-lib");
 const createApp = require("../src/app");
 const {
   buildVoucherDailySummary,
+  buildVoucherDailyAccountGroups,
   buildTerDayBuckets,
   getVoucherExpenseDescription,
 } = require("../src/services/pdfService");
@@ -266,7 +267,15 @@ describe("reimbursement workflow", () => {
         peopleSoftProjectId: "CUSTOM-PROJECT",
         peopleSoftActivityId: "CUSTOM-ACTIVITY",
         peopleSoftDepartmentId: "CUSTOM-DEPARTMENT",
-        peopleSoftVehicleRepairAccount: "VEHICLE-REPAIR-ACCOUNT",
+        lineItems: [{
+          expenseDate: "2026-07-06T00:00:00.000Z",
+          location: "Kisumu",
+          category: "VEHICLE FUEL",
+          description: "Vehicle fuel",
+          invoiceNumber: "FUEL-001",
+          amount: 500,
+          vehicleRepairPeopleSoftAccount: "VEHICLE-REPAIR-ACCOUNT",
+        }],
       }));
     expect(preview.status).toBe(200);
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
@@ -307,7 +316,15 @@ describe("reimbursement workflow", () => {
         peopleSoftProjectId: "CUSTOM-PROJECT",
         peopleSoftActivityId: "CUSTOM-ACTIVITY",
         peopleSoftDepartmentId: "CUSTOM-DEPARTMENT",
-        peopleSoftVehicleRepairAccount: "VEHICLE-REPAIR-ACCOUNT",
+        lineItems: [{
+          expenseDate: "2026-07-06T00:00:00.000Z",
+          location: "Kisumu",
+          category: "VEHICLE FUEL",
+          description: "Vehicle fuel",
+          invoiceNumber: "FUEL-001",
+          amount: 500,
+          vehicleRepairPeopleSoftAccount: "VEHICLE-REPAIR-ACCOUNT",
+        }],
       }));
     expect(response.status).toBe(201);
     expect(response.body.status).toBe("SUBMITTED_TO_BUDGET_HOLDER");
@@ -316,11 +333,11 @@ describe("reimbursement workflow", () => {
     );
     expect(response.body.lineManagerId._id).toBe(manager._id.toString());
     expect(response.body.supervisorId).toBeNull();
-    expect(response.body.totalAmountKsh).toBe(12000);
-    expect(response.body.peopleSoftVehicleRepairAccount).toBe("VEHICLE-REPAIR-ACCOUNT");
-    expect(response.body.lineItems).toHaveLength(2);
-    expect(response.body.lineItems[0].category).toBe("PER DIEM (M&I)");
-    expect(response.body.lineItems[1].category).toBe("HOTEL ROOM & TAXES");
+    expect(response.body.totalAmountKsh).toBe(500);
+    expect(response.body.lineItems).toHaveLength(1);
+    expect(response.body.lineItems[0].category).toBe("VEHICLE FUEL");
+    expect(response.body.lineItems[0].description).toBe("Vehicle fuel");
+    expect(response.body.lineItems[0].vehicleRepairPeopleSoftAccount).toBe("VEHICLE-REPAIR-ACCOUNT");
     expect(response.body.employeeNumber).toBe("R691");
     expect(response.body.department).toBe("ADMIN");
     expect(response.body.paymentRequestPurpose).toBe("Approved travel expenses");
@@ -328,7 +345,7 @@ describe("reimbursement workflow", () => {
       paymentMethod: "mpesa",
       mpesaNumber: "0712345678",
     });
-    expect(response.body.lineItems[0].invoiceNumber).toBe("INV-TER-001");
+    expect(response.body.lineItems[0].invoiceNumber).toBe("FUEL-001");
     expect(response.body.travelRequest.project).toMatchObject({
       fundCode: "DEC16",
       projectId: "CDEUKE3014",
@@ -1526,6 +1543,49 @@ describe("reimbursement workflow", () => {
       "ACT1",
       "DEPT1",
     ]);
+    const accountGroups = buildVoucherDailyAccountGroups({
+      date: new Date("2026-07-01T00:00:00.000Z"),
+      location: "Dadaab",
+      items: [
+        { category: "HOTEL ROOM & TAXES", amount: 4000 },
+        {
+          category: "VEHICLE FUEL",
+          description: "Vehicle fuel",
+          amount: 1200,
+          vehicleRepairPeopleSoftAccount: "VEHICLE-REPAIR-ACCOUNT",
+        },
+        {
+          category: "VEHICLE MAINTENANCE",
+          description: "Vehicle maintenance",
+          amount: 350,
+          vehicleRepairPeopleSoftAccount: "VEHICLE-REPAIR-ACCOUNT",
+        },
+      ],
+    }, "PS-ACCOUNT-001");
+    expect(accountGroups.map((group) => group.peopleSoftAccount)).toEqual([
+      "PS-ACCOUNT-001",
+      "VEHICLE-REPAIR-ACCOUNT",
+    ]);
+    expect(accountGroups.map((group) => Object.values(group.amounts).reduce((sum, amount) => sum + amount, 0)))
+      .toEqual([4000, 1550]);
+    const accountRows = accountGroups.map((group) => buildVoucherDailySummary(
+      group,
+      "Dadaab",
+      { fundCode: "SHARED-FUND" },
+      group.peopleSoftAccount
+    ));
+    expect(accountRows.map((row) => [row[4], row[5]])).toEqual([
+      ["PS-ACCOUNT-001", "SHARED-FUND"],
+      ["VEHICLE-REPAIR-ACCOUNT", "SHARED-FUND"],
+    ]);
+    expect(accountRows[1][1]).toBe("Vehicle fuel, Vehicle maintenance");
+    const vehicleMaintenanceBucket = buildTerDayBuckets([{
+      expenseDate: "2026-07-01T00:00:00.000Z",
+      location: "Dadaab",
+      category: "VEHICLE MAINTENANCE",
+      amount: 350,
+    }])[0];
+    expect(vehicleMaintenanceBucket.amounts).toEqual({ "VEHICLE MAINTENANCE": 350 });
     for (const [categories, expectedTotal] of [
       [["BREAKFAST", "LUNCH"], 2000],
       [["LUNCH", "DINNER"], 2500],
@@ -1591,7 +1651,6 @@ describe("reimbursement workflow", () => {
       .send(buildReimbursementPayload(travelRequestId, manager._id, {
         supervisorId: "",
         peopleSoftAccount: "PS-ACCOUNT-001",
-        peopleSoftVehicleRepairAccount: "VEHICLE-REPAIR-ACCOUNT",
         lineItems: [
           {
             expenseDate: "2026-07-06T00:00:00.000Z",
@@ -1603,7 +1662,6 @@ describe("reimbursement workflow", () => {
         ],
       }));
     expect(created.body.peopleSoftAccount).toBe("PS-ACCOUNT-001");
-    expect(created.body.peopleSoftVehicleRepairAccount).toBe("VEHICLE-REPAIR-ACCOUNT");
 
     const receiptPdf = await TestPDFDocument.create();
     receiptPdf.addPage([321, 456]);
