@@ -48,6 +48,7 @@ Pending TARs receive automatic reminders to their primary selected approver afte
 - `BREVO_SMTP_KEY`: Brevo SMTP key/password from Brevo SMTP settings.
 - `BREVO_API_KEY`: Brevo API key. Preferred on Render because it uses HTTPS instead of an SMTP socket.
 - `EMAIL_FROM`: Sender address shown to recipients.
+- `EMAIL_FROM_NAME`: Sender display name shown to recipients (defaults to `CARE Travel Request`).
 - `FRONTEND_URL`: Base URL used in account activation links (must match where you serve `care-travel-request-frontend`, e.g. `http://localhost:5500`).
 - `NODE_ENV`: `development` | `test` | `production`.
 
@@ -60,13 +61,14 @@ Pending TARs receive automatic reminders to their primary selected approver afte
   BREVO_SMTP_USER=your-brevo-smtp-login
   BREVO_SMTP_KEY=your-brevo-smtp-key
   EMAIL_FROM=verified-sender@care.org
+  EMAIL_FROM_NAME=CARE Travel Request
   ```
 3. Restart the backend after changing `.env`.
 4. In Render, add the same three values under the `tar-backend` service environment variables and redeploy.
 
-The sender address must be verified in Brevo. The SMTP fallback uses Brevo port `2525` to avoid common hosting restrictions on port `587`. Do not put the SMTP key in source control or send it through chat.
+The sender address must be verified in Brevo. For the best deliverability, authenticate the sending domain in Brevo and publish the exact SPF and DKIM DNS records Brevo provides; also publish a DMARC record for that domain, starting with a monitoring policy if needed. Use an address on that authenticated domain for `EMAIL_FROM` rather than a free-mail or unrelated address. Do not create a second SPF record for a domain that already has one; merge provider includes into the existing record. DNS records must be added with the domain's DNS host, and their propagation and verification must complete in Brevo before sending.
 
-Transactional TAR emails include both HTML and plain-text content. Inbox placement is determined by recipient mail systems and cannot be guaranteed by the application. For reliable delivery, verify the sender domain in Brevo and configure its SPF and DKIM DNS records; publish a DMARC policy for the same domain. Check Brevo delivery logs and the recipient's spam/quarantine folders if an email is missing.
+Transactional TAR emails include both HTML and plain-text content and use a consistent sender display name. Inbox placement is ultimately determined by recipient mail systems and cannot be guaranteed by the application. Check Brevo delivery logs and the recipient's spam/quarantine folders if an email is missing; ask the recipient's mail administrator to allow-list the verified sender/domain if messages are still quarantined.
 
 ## Frontend integration
 

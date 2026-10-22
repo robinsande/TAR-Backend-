@@ -73,6 +73,7 @@ const env = {
   brevoSmtpKey: process.env.BREVO_SMTP_KEY || "",
   brevoApiKey: process.env.BREVO_API_KEY || "",
   emailFrom: process.env.EMAIL_FROM || process.env.BREVO_SMTP_USER || "",
+  emailFromName: process.env.EMAIL_FROM_NAME || "CARE Travel Request",
   frontendUrl,
   corsOrigins: buildCorsOrigins(frontendUrl),
 };

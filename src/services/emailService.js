@@ -24,7 +24,10 @@ function isRetryableBrevoError(error) {
 
 async function sendBrevoApiEmail(to, subject, html, text, replyTo = null, from = null) {
   const body = JSON.stringify({
-    sender: { email: from || env.emailFrom },
+    sender: {
+      email: from || env.emailFrom,
+      name: env.emailFromName,
+    },
     to: [{ email: to }],
     subject,
     htmlContent: html,
@@ -117,7 +120,10 @@ async function sendEmail(to, subject, html, options = {}) {
 
   try {
     await mailer.sendMail({
-      from: from || env.emailFrom || env.brevoSmtpUser,
+      from: {
+        name: env.emailFromName,
+        address: from || env.emailFrom || env.brevoSmtpUser,
+      },
       to,
       subject,
       html,
@@ -137,6 +143,7 @@ function buildActivationEmail(user, inviteToken) {
 
   return {
     subject: "Activate your CARE travel request account",
+    text: `Hello ${user.name},\n\nYour CARE travel request account has been created. Set your password using this link:\n${activationUrl}\n\nActivation token: ${inviteToken}\n\nThis link expires in 7 days.`,
     html: `
       <p>Hello ${user.name},</p>
       <p>Your CARE travel request account has been created. Please set your password to activate it:</p>
@@ -150,7 +157,7 @@ function buildActivationEmail(user, inviteToken) {
 
 async function sendActivationEmail(user, inviteToken) {
   const content = buildActivationEmail(user, inviteToken);
-  return sendEmail(user.email, content.subject, content.html);
+  return sendEmail(user.email, content.subject, content.html, { text: content.text });
 }
 
 function buildTemporaryPasswordEmail(user, temporaryPassword, expiresAt) {
@@ -159,6 +166,7 @@ function buildTemporaryPasswordEmail(user, temporaryPassword, expiresAt) {
 
   return {
     subject: "Your CARE travel request system access",
+    text: `Hello ${user.name},\n\nYour CARE travel request system account is ready. Sign in here:\n${loginUrl}\n\nEmail: ${user.email}\nTemporary password: ${temporaryPassword}\n\nThis temporary password expires on ${expiry}. You must choose a new password after signing in.`,
     html: `
       <p>Hello ${user.name},</p>
       <p>Your CARE travel request system account is ready. Use the secure link below to sign in:</p>
@@ -172,7 +180,7 @@ function buildTemporaryPasswordEmail(user, temporaryPassword, expiresAt) {
 
 async function sendTemporaryPasswordEmail(user, temporaryPassword, expiresAt) {
   const content = buildTemporaryPasswordEmail(user, temporaryPassword, expiresAt);
-  return sendEmail(user.email, content.subject, content.html);
+  return sendEmail(user.email, content.subject, content.html, { text: content.text });
 }
 
 module.exports = {

@@ -7,9 +7,15 @@ jest.mock("../src/config/env", () => ({
   brevoSmtpUser: "",
   brevoSmtpKey: "",
   emailFrom: "travel@example.org",
+  emailFromName: "CARE Travel Request",
+  frontendUrl: "https://travel.example.org",
 }));
 
-const { sendEmail } = require("../src/services/emailService");
+const {
+  sendEmail,
+  buildActivationEmail,
+  buildTemporaryPasswordEmail,
+} = require("../src/services/emailService");
 
 describe("email delivery", () => {
   const originalFetch = global.fetch;
@@ -17,6 +23,23 @@ describe("email delivery", () => {
   afterEach(() => {
     global.fetch = originalFetch;
     jest.restoreAllMocks();
+  });
+
+  it("provides plain-text alternatives for account emails", () => {
+    const activation = buildActivationEmail(
+      { name: "Staff Member", email: "staff@example.org" },
+      "activation-token"
+    );
+    const temporaryPassword = buildTemporaryPasswordEmail(
+      { name: "Staff Member", email: "staff@example.org" },
+      "temporary-password",
+      "2026-10-29T00:00:00.000Z"
+    );
+
+    expect(activation.text).toContain("activation-token");
+    expect(activation.text).toContain("https://");
+    expect(temporaryPassword.text).toContain("temporary-password");
+    expect(temporaryPassword.text).toContain("staff@example.org");
   });
 
   it("retries temporary Brevo errors and preserves the message payload", async () => {
@@ -38,6 +61,10 @@ describe("email delivery", () => {
     const retryRequest = JSON.parse(global.fetch.mock.calls[1][1].body);
     expect(firstRequest).toEqual(retryRequest);
     expect(firstRequest.textContent).toBe("Review");
+    expect(firstRequest.sender).toEqual({
+      email: "travel@example.org",
+      name: "CARE Travel Request",
+    });
     expect(firstRequest.replyTo).toEqual({ email: "requester@example.org" });
     expect(global.fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
