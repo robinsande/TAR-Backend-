@@ -505,7 +505,7 @@ async function previewReimbursement(req, res) {
     totalAmountKsh,
     submittedAt: new Date(),
     status: "DRAFT",
-  }, expenseDocuments);
+  }, expenseDocuments, { disposition: "inline" });
 }
 
 async function getMyReimbursements(req, res) {

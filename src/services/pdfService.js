@@ -1733,7 +1733,12 @@ function drawTravelExpenseReportPages(doc, report) {
   });
 }
 
-async function buildReimbursementPdf(res, report, expenseDocuments = []) {
+async function buildReimbursementPdf(
+  res,
+  report,
+  expenseDocuments = [],
+  { disposition = "attachment" } = {}
+) {
   const filename = `reimbursement-${report._id}.pdf`;
   const basePdf = await createPdfBuffer((doc) => {
     drawPaymentRequestPage(doc, report);
@@ -1775,7 +1780,7 @@ async function buildReimbursementPdf(res, report, expenseDocuments = []) {
 
   const pdf = Buffer.from(await mergedPdf.save());
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", `${disposition}; filename="${filename}"`);
   res.setHeader("Content-Length", pdf.length);
   res.end(pdf);
 }

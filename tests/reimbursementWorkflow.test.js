@@ -269,6 +269,7 @@ describe("reimbursement workflow", () => {
       }));
     expect(preview.status).toBe(200);
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
+    expect(preview.headers["content-disposition"]).toMatch(/^inline;/);
     expect(await getPdfPageCount(preview.body)).toBe(3);
 
     const receiptPdf = await TestPDFDocument.create();
