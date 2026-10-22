@@ -110,6 +110,7 @@ function buildReimbursementDraftData(
     financeCcAdminId: null,
     paymentRequestPurpose: payload.paymentRequestPurpose,
     peopleSoftAccount: String(payload.peopleSoftAccount || "").trim(),
+    peopleSoftVehicleRepairAccount: String(payload.peopleSoftVehicleRepairAccount || "").trim(),
     peopleSoftFundCode: String(payload.peopleSoftFundCode || "").trim(),
     peopleSoftProjectId: String(payload.peopleSoftProjectId || "").trim(),
     peopleSoftActivityId: String(payload.peopleSoftActivityId || "").trim(),
@@ -152,6 +153,7 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
     financeCcAdminId: report.financeCcAdminId,
     paymentRequestPurpose: report.paymentRequestPurpose,
     peopleSoftAccount: report.peopleSoftAccount,
+    peopleSoftVehicleRepairAccount: report.peopleSoftVehicleRepairAccount,
     peopleSoftFundCode: report.peopleSoftFundCode,
     peopleSoftProjectId: report.peopleSoftProjectId,
     peopleSoftActivityId: report.peopleSoftActivityId,
@@ -188,6 +190,7 @@ function applyReimbursementResubmission(report, payload, supervisorId) {
   report.position = payload.position || report.position;
   report.baseLocation = payload.baseLocation;
   report.peopleSoftAccount = String(payload.peopleSoftAccount || "").trim();
+  report.peopleSoftVehicleRepairAccount = String(payload.peopleSoftVehicleRepairAccount || "").trim();
   report.peopleSoftFundCode = String(payload.peopleSoftFundCode || "").trim();
   report.peopleSoftProjectId = String(payload.peopleSoftProjectId || "").trim();
   report.peopleSoftActivityId = String(payload.peopleSoftActivityId || "").trim();

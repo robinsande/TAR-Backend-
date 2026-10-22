@@ -172,6 +172,14 @@ function normalizePeopleSoftAccount(value) {
   return account;
 }
 
+function normalizePeopleSoftVehicleRepairAccount(value) {
+  const account = String(value || "").trim();
+  if (account.length > 80) {
+    throw new HttpError(400, "Vehicle repair PeopleSoft Account must be 80 characters or fewer");
+  }
+  return account;
+}
+
 function assertStandardExpenseRates(lineItems) {
   for (const item of lineItems) {
     const requiredAmount = STANDARD_EXPENSE_RATES[item.category];
@@ -343,6 +351,9 @@ async function createReimbursement(req, res) {
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
   const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
+  const peopleSoftVehicleRepairAccount = normalizePeopleSoftVehicleRepairAccount(
+    req.body.peopleSoftVehicleRepairAccount
+  );
 
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
@@ -363,6 +374,7 @@ async function createReimbursement(req, res) {
           requesterSignedName,
           requesterSignature,
           peopleSoftAccount,
+          peopleSoftVehicleRepairAccount,
         },
         submitter._id,
         supervisor?._id || null,
@@ -431,6 +443,9 @@ async function previewReimbursement(req, res) {
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, submitter);
   const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
+  const peopleSoftVehicleRepairAccount = normalizePeopleSoftVehicleRepairAccount(
+    req.body.peopleSoftVehicleRepairAccount
+  );
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
 
@@ -496,6 +511,7 @@ async function previewReimbursement(req, res) {
     baseLocation: req.body.baseLocation,
     paymentRequestPurpose: req.body.paymentRequestPurpose,
     peopleSoftAccount,
+    peopleSoftVehicleRepairAccount,
     peopleSoftFundCode: String(req.body.peopleSoftFundCode || "").trim(),
     peopleSoftProjectId: String(req.body.peopleSoftProjectId || "").trim(),
     peopleSoftActivityId: String(req.body.peopleSoftActivityId || "").trim(),
@@ -650,6 +666,9 @@ async function updateReimbursement(req, res) {
   const { signature: requesterSignature, signedName: requesterSignedName } =
     resolveRequesterSignature(req.body.requesterSignature, req.currentUser);
   const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
+  const peopleSoftVehicleRepairAccount = normalizePeopleSoftVehicleRepairAccount(
+    req.body.peopleSoftVehicleRepairAccount
+  );
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
   const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
@@ -678,6 +697,7 @@ async function updateReimbursement(req, res) {
   report.requesterSignature = requesterSignature;
   report.paymentRequestPurpose = req.body.paymentRequestPurpose;
   report.peopleSoftAccount = peopleSoftAccount;
+  report.peopleSoftVehicleRepairAccount = peopleSoftVehicleRepairAccount;
   report.peopleSoftFundCode = String(req.body.peopleSoftFundCode || "").trim();
   report.peopleSoftProjectId = String(req.body.peopleSoftProjectId || "").trim();
   report.peopleSoftActivityId = String(req.body.peopleSoftActivityId || "").trim();

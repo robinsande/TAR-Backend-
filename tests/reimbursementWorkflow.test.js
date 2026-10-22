@@ -266,6 +266,7 @@ describe("reimbursement workflow", () => {
         peopleSoftProjectId: "CUSTOM-PROJECT",
         peopleSoftActivityId: "CUSTOM-ACTIVITY",
         peopleSoftDepartmentId: "CUSTOM-DEPARTMENT",
+        peopleSoftVehicleRepairAccount: "VEHICLE-REPAIR-ACCOUNT",
       }));
     expect(preview.status).toBe(200);
     expect(preview.headers["content-type"]).toMatch(/application\/pdf/);
@@ -306,6 +307,7 @@ describe("reimbursement workflow", () => {
         peopleSoftProjectId: "CUSTOM-PROJECT",
         peopleSoftActivityId: "CUSTOM-ACTIVITY",
         peopleSoftDepartmentId: "CUSTOM-DEPARTMENT",
+        peopleSoftVehicleRepairAccount: "VEHICLE-REPAIR-ACCOUNT",
       }));
     expect(response.status).toBe(201);
     expect(response.body.status).toBe("SUBMITTED_TO_BUDGET_HOLDER");
@@ -315,6 +317,7 @@ describe("reimbursement workflow", () => {
     expect(response.body.lineManagerId._id).toBe(manager._id.toString());
     expect(response.body.supervisorId).toBeNull();
     expect(response.body.totalAmountKsh).toBe(12000);
+    expect(response.body.peopleSoftVehicleRepairAccount).toBe("VEHICLE-REPAIR-ACCOUNT");
     expect(response.body.lineItems).toHaveLength(2);
     expect(response.body.lineItems[0].category).toBe("PER DIEM (M&I)");
     expect(response.body.lineItems[1].category).toBe("HOTEL ROOM & TAXES");
@@ -1588,6 +1591,7 @@ describe("reimbursement workflow", () => {
       .send(buildReimbursementPayload(travelRequestId, manager._id, {
         supervisorId: "",
         peopleSoftAccount: "PS-ACCOUNT-001",
+        peopleSoftVehicleRepairAccount: "VEHICLE-REPAIR-ACCOUNT",
         lineItems: [
           {
             expenseDate: "2026-07-06T00:00:00.000Z",
@@ -1599,6 +1603,7 @@ describe("reimbursement workflow", () => {
         ],
       }));
     expect(created.body.peopleSoftAccount).toBe("PS-ACCOUNT-001");
+    expect(created.body.peopleSoftVehicleRepairAccount).toBe("VEHICLE-REPAIR-ACCOUNT");
 
     const receiptPdf = await TestPDFDocument.create();
     receiptPdf.addPage([321, 456]);

@@ -27,7 +27,12 @@ const reimbursementHeaderValidators = [
     .notEmpty()
     .isLength({ max: 1500000 })
     .withMessage("Draw or type your signature before continuing"),
-  body("baseLocation").isString().notEmpty().withMessage("Base location is required"),
+  body("baseLocation")
+    .isString()
+    .trim()
+    .notEmpty()
+    .isLength({ max: 120 })
+    .withMessage("Base Location / Area of Operation is required (120 characters or fewer)"),
   body("employeeNumber").optional().isString(),
   body("department").optional().isString(),
   body("position").optional().isString(),
@@ -40,6 +45,7 @@ const reimbursementHeaderValidators = [
   body("peopleSoftProjectId").optional().isString().isLength({ max: 80 }),
   body("peopleSoftActivityId").optional().isString().isLength({ max: 80 }),
   body("peopleSoftDepartmentId").optional().isString().isLength({ max: 80 }),
+  body("peopleSoftVehicleRepairAccount").optional().isString().isLength({ max: 80 }),
   body("paymentDetails.paymentMethod")
     .equals("mpesa")
     .withMessage("M-PESA is the supported reimbursement payment method"),

@@ -1011,9 +1011,17 @@ function drawPaymentRequestPage(doc, report) {
   });
   doc.font("Helvetica").fontSize(8.5).text(purpose, purposeX + 4, purposeY + 13, {
     width: purposeWidth - 8,
-    height: purposeHeight - 16,
+    height: purposeHeight - (report.peopleSoftVehicleRepairAccount ? 34 : 16),
     ellipsis: true,
   });
+  if (report.peopleSoftVehicleRepairAccount) {
+    doc.font("Helvetica-Bold").fontSize(7).text(
+      `Vehicle repair PeopleSoft Account: ${report.peopleSoftVehicleRepairAccount}`,
+      purposeX + 4,
+      purposeY + purposeHeight - 17,
+      { width: purposeWidth - 8, height: 12, ellipsis: true }
+    );
+  }
 
   drawPaymentRequestExpenseSummary(doc, report, project, {
     x: margin,
