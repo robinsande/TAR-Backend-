@@ -4,7 +4,10 @@ const { listEligiblePassengers } = require("../services/passengerService");
 const { hashPassword } = require("../services/passwordService");
 const HttpError = require("../utils/httpError");
 const crypto = require("crypto");
-const { isEmailConfigured, sendTemporaryPasswordEmail } = require("../services/emailService");
+const {
+  isEmailConfigured,
+  sendTemporaryPasswordEmail,
+} = require("../services/emailService");
 const { listBudgetHolders: getBudgetHolders } = require("../services/budgetHolderService");
 
 function generateTemporaryPassword() {
@@ -244,18 +247,54 @@ async function updateUserProfile(req, res) {
 async function resetUserPassword(req, res) {
   const user = await User.findById(req.params.id);
   if (!user) throw new HttpError(404, "User not found");
+  if (!isEmailConfigured()) {
+    throw new HttpError(
+      503,
+      "Password reset email is not configured. Set up the email service before resetting passwords."
+    );
+  }
 
   const temporaryPassword = generateTemporaryPassword();
+  const passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const sent = await sendTemporaryPasswordEmail(
+    user,
+    temporaryPassword,
+    passwordExpiresAt
+  );
+  if (!sent) {
+    throw new HttpError(502, `Could not send the temporary password to ${user.email}`);
+  }
+
   user.passwordHash = await hashPassword(temporaryPassword);
-  user.passwordExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  user.passwordExpiresAt = passwordExpiresAt;
   user.mustSetPassword = true;
   await user.save();
 
   return res.json({
     id: user._id,
     email: user.email,
-    passwordExpiresAt: user.passwordExpiresAt,
-    temporaryPassword,
+    passwordExpiresAt,
+    emailSent: true,
+  });
+}
+
+async function resetUserAuthenticator(req, res) {
+  const user = await User.findById(req.params.id).select(
+    "+mfaSecretEncrypted +mfaPendingSecretEncrypted +mfaChallengeId"
+  );
+  if (!user) throw new HttpError(404, "User not found");
+
+  user.mfaEnabled = false;
+  user.mfaSecretEncrypted = null;
+  user.mfaPendingSecretEncrypted = null;
+  user.mfaChallengeId = null;
+  user.mfaEnabledAt = null;
+  await user.save();
+
+  return res.json({
+    id: user._id,
+    email: user.email,
+    mfaSetupRequired: true,
   });
 }
 
@@ -396,6 +435,7 @@ module.exports = {
   updateUserRole,
   updateUserProfile,
   resetUserPassword,
+  resetUserAuthenticator,
     sendBulkInvitations,
   updateUserStatus,
   deleteUser,

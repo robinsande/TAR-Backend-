@@ -544,6 +544,53 @@ describe("request scoping and workflow", () => {
       .toEqual(["approved", "approved"]);
   });
 
+  it("allows different travel destinations to use the same fund code", async () => {
+    const requester = await createUser({
+      name: "Same Fund Destination Requester",
+      email: "same-fund-destination-requester@example.com",
+    });
+    const manager = await createUser({
+      name: "Same Fund Destination Manager",
+      email: "same-fund-destination-manager@example.com",
+      role: "admin",
+    });
+    const requesterToken = await login(requester.email);
+
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(manager._id, {
+        passengers: [passengerFor(requester)],
+        travelSegments: [{
+          from: "Kisumu",
+          to: "Nakuru",
+          destination: "Nakuru",
+          dateFrom: "2026-07-08",
+          dateTo: "2026-07-09",
+          accommodationNeeded: true,
+          project: {
+            name: "Western Response",
+            businessUnit: "KEN03",
+            fundCode: "DEC16",
+            projectId: "CDEUKE3014",
+            departmentId: "KE0201",
+            activityId: "3",
+          },
+          selected_budget_holder_id: String(defaultBudgetHolderId),
+        }],
+      }));
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.budgetHolderApprovals.map((approval) => ({
+      destination: approval.destination,
+      fundCode: approval.fundCode,
+    }))).toEqual([
+      { destination: "Kisumu", fundCode: "DEC16" },
+      { destination: "Nakuru", fundCode: "DEC16" },
+    ]);
+    expect(createResponse.body.travelSegments[0].project.fundCode).toBe("DEC16");
+  });
+
   it("lets only the selected budget holder reject and notify the requester", async () => {
     const manager = await createUser({
       name: "Manager Admin",

@@ -1,6 +1,8 @@
 jest.mock("../src/services/emailService", () => ({
+  isEmailConfigured: jest.fn().mockReturnValue(true),
   sendEmail: jest.fn().mockResolvedValue(true),
   sendActivationEmail: jest.fn().mockResolvedValue(true),
+  sendTemporaryPasswordEmail: jest.fn().mockResolvedValue(true),
   buildActivationEmail: jest.fn(),
 }));
 
@@ -17,6 +19,10 @@ const {
   generateTotpCode,
 } = require("../src/services/mfaService");
 const { loginWithMfa } = require("./mfaTestHelper");
+const {
+  isEmailConfigured,
+  sendTemporaryPasswordEmail,
+} = require("../src/services/emailService");
 
 let app;
 
@@ -27,6 +33,9 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await User.deleteMany({});
+  jest.clearAllMocks();
+  isEmailConfigured.mockReturnValue(true);
+  sendTemporaryPasswordEmail.mockResolvedValue(true);
 });
 
 afterAll(async () => {
@@ -81,6 +90,140 @@ describe("account activation", () => {
     expect(superadminResponse.status).toBe(201);
     expect(superadminResponse.body.temporaryPassword).toBeTruthy();
     expect(await User.exists({ email: payload.email, role: "user" })).toBeTruthy();
+  });
+
+  it("emails a temporary password when a superadmin resets a user's password", async () => {
+    const superadmin = await User.create({
+      name: "Superadmin User",
+      email: "superadmin-reset@example.com",
+      role: "superadmin",
+      isActive: true,
+    });
+    const oldPasswordHash = await hashPassword("OldPassword123!");
+    const targetUser = await User.create({
+      name: "Reset Target",
+      email: "reset-target@example.com",
+      role: "user",
+      isActive: true,
+      passwordHash: oldPasswordHash,
+    });
+    const token = signToken({
+      userId: superadmin._id.toString(),
+      role: superadmin.role,
+    });
+
+    const response = await request(app)
+      .post(`/api/users/${targetUser._id}/reset-password`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      email: targetUser.email,
+      emailSent: true,
+    });
+    expect(response.body.temporaryPassword).toBeUndefined();
+    expect(sendTemporaryPasswordEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ email: targetUser.email }),
+      expect.any(String),
+      expect.any(Date)
+    );
+    const updatedUser = await User.findById(targetUser._id);
+    expect(updatedUser.mustSetPassword).toBe(true);
+    expect(updatedUser.passwordHash).not.toBe(oldPasswordHash);
+    expect(updatedUser.passwordExpiresAt).toBeInstanceOf(Date);
+  });
+
+  it("does not change a password if the temporary-password email cannot be sent", async () => {
+    const superadmin = await User.create({
+      name: "Superadmin User",
+      email: "superadmin-email-failure@example.com",
+      role: "superadmin",
+      isActive: true,
+    });
+    const oldPasswordHash = await hashPassword("OldPassword123!");
+    const targetUser = await User.create({
+      name: "Reset Target",
+      email: "reset-email-failure@example.com",
+      role: "user",
+      isActive: true,
+      passwordHash: oldPasswordHash,
+    });
+    sendTemporaryPasswordEmail.mockResolvedValue(false);
+    const token = signToken({
+      userId: superadmin._id.toString(),
+      role: superadmin.role,
+    });
+
+    const response = await request(app)
+      .post(`/api/users/${targetUser._id}/reset-password`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(response.status).toBe(502);
+    expect((await User.findById(targetUser._id)).passwordHash).toBe(oldPasswordHash);
+  });
+
+  it("allows only superadmins to reset a user's authenticator enrollment", async () => {
+    const superadmin = await User.create({
+      name: "Superadmin User",
+      email: "superadmin-mfa-reset@example.com",
+      role: "superadmin",
+      isActive: true,
+    });
+    const admin = await User.create({
+      name: "Admin User",
+      email: "admin-mfa-reset@example.com",
+      role: "admin",
+      isActive: true,
+    });
+    const passwordHash = await hashPassword("UserPassword123!");
+    const targetUser = await User.create({
+      name: "MFA Reset Target",
+      email: "mfa-reset-target@example.com",
+      role: "user",
+      isActive: true,
+      passwordHash,
+      mfaEnabled: true,
+      mfaSecretEncrypted: "old-encrypted-secret",
+      mfaPendingSecretEncrypted: "pending-encrypted-secret",
+      mfaChallengeId: "old-challenge",
+      mfaEnabledAt: new Date(),
+    });
+    const adminToken = signToken({
+      userId: admin._id.toString(),
+      role: admin.role,
+    });
+    const forbidden = await request(app)
+      .post(`/api/users/${targetUser._id}/reset-authenticator`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(forbidden.status).toBe(403);
+
+    const superadminToken = signToken({
+      userId: superadmin._id.toString(),
+      role: superadmin.role,
+    });
+    const response = await request(app)
+      .post(`/api/users/${targetUser._id}/reset-authenticator`)
+      .set("Authorization", `Bearer ${superadminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      email: targetUser.email,
+      mfaSetupRequired: true,
+    });
+    const updatedUser = await User.findById(targetUser._id).select(
+      "+mfaSecretEncrypted +mfaPendingSecretEncrypted +mfaChallengeId"
+    );
+    expect(updatedUser.mfaEnabled).toBe(false);
+    expect(updatedUser.mfaSecretEncrypted).toBeNull();
+    expect(updatedUser.mfaPendingSecretEncrypted).toBeNull();
+    expect(updatedUser.mfaChallengeId).toBeNull();
+    expect(updatedUser.mfaEnabledAt).toBeNull();
+
+    const loginResponse = await request(app)
+      .post("/api/auth/login")
+      .send({ email: targetUser.email, password: "UserPassword123!" });
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.body.mfaSetupRequired).toBe(true);
   });
 
   it("permanently deletes users only when requested by a superadmin", async () => {

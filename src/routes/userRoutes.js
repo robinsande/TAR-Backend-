@@ -13,6 +13,7 @@ const {
   updateUserRole,
   updateUserProfile,
   resetUserPassword,
+  resetUserAuthenticator,
     sendBulkInvitations,
   updateUserStatus,
   deleteUser,
@@ -91,6 +92,13 @@ router.post(
   ...resetUserPasswordValidator,
   validationErrorHandler,
   asyncHandler(resetUserPassword)
+);
+router.post(
+  "/:id/reset-authenticator",
+  requireRole("superadmin"),
+  ...resetUserPasswordValidator,
+  validationErrorHandler,
+  asyncHandler(resetUserAuthenticator)
 );
 router.patch(
   "/:id/status",

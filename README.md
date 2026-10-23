@@ -116,6 +116,8 @@ Test logins (password `Password123!`):
 - `GET /api/users/passengers`
 - `GET /api/users` (superadmin)
 - `PATCH /api/users/:id/roles` (superadmin; assign or remove `supervisor`, `finance_admin`, and `auditor`)
+- `POST /api/users/:id/reset-password` (superadmin; emails a temporary password)
+- `POST /api/users/:id/reset-authenticator` (superadmin; clears MFA enrollment so the user scans a new QR code at next sign-in)
 
 ### Travel requests (JWT)
 - `GET /api/requests/my-signature` (requester's signature from their latest approved TAR; falls back to their saved profile signature)
