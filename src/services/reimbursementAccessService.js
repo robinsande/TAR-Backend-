@@ -46,6 +46,8 @@ async function buildReimbursementTeamScope(user) {
       { submittedBy: user.id },
       { submittedBy: { $in: directReportIds } },
       { selected_approver_id: user.id },
+      { currentBudgetHolderId: user.id },
+      { "budgetHolderApprovals.budgetHolderUser": user.id },
       { lineManagerId: user.id },
     ],
   };
@@ -58,6 +60,9 @@ async function canAccessReport(user, report) {
 
   const ownerId = idToString(report.submittedBy);
   const approverId = idToString(report.selected_approver_id);
+  const isBudgetHolder = (report.budgetHolderApprovals || []).some(
+    (approval) => idToString(approval.budgetHolderUser) === user.id
+  );
   const lineManagerId = idToString(report.lineManagerId);
   const lineManagerCanReviewDocuments = [
     "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
@@ -74,6 +79,8 @@ async function canAccessReport(user, report) {
   if (
     ownerId === user.id ||
     approverId === user.id ||
+    idToString(report.currentBudgetHolderId) === user.id ||
+    isBudgetHolder ||
     idToString(report.supervisorId) === user.id ||
     (lineManagerId === user.id && lineManagerCanReviewDocuments)
   ) {
@@ -112,6 +119,10 @@ function canViewMergedReimbursementPackage(user, report) {
   return (
     idToString(report.submittedBy) === userId ||
     idToString(report.selected_approver_id) === userId ||
+    idToString(report.currentBudgetHolderId) === userId ||
+    (report.budgetHolderApprovals || []).some(
+      (approval) => idToString(approval.budgetHolderUser) === userId
+    ) ||
     idToString(report.financeAdminId) === userId ||
     idToString(report.financeCcAdminId) === userId ||
     ["superadmin", "super_superadmin"].includes(user.role) ||

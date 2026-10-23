@@ -7,6 +7,9 @@ function getReimbursementPopulateQuery(query) {
     .populate("travelRequest")
     .populate("submittedBy", "-passwordHash")
     .populate("selected_approver_id", "-passwordHash")
+    .populate("currentBudgetHolderId", "-passwordHash")
+    .populate("budgetHolderApprovals.budgetHolderUser", "name email role")
+    .populate("budgetHolderApprovals.decidedBy", "name email")
     .populate("supervisorId", "-passwordHash")
     .populate("lineManagerId", "-passwordHash")
     .populate("financeAdminId", "-passwordHash")
@@ -67,9 +70,9 @@ async function attachLineItems(reports) {
   const reportList = Array.isArray(reports) ? reports : [reports];
   const reportIds = reportList.map((report) => report._id);
 
-  const lineItems = await ExpenseLineItem.find({ report: { $in: reportIds } }).sort({
-    expenseDate: 1,
-  });
+  const lineItems = await ExpenseLineItem.find({ report: { $in: reportIds } })
+    .populate("budgetHolderUserId", "name email")
+    .sort({ expenseDate: 1 });
 
   const itemsByReport = lineItems.reduce((map, item) => {
     const key = item.report.toString();
@@ -150,6 +153,8 @@ async function replaceReportLineItems(reportId, lineItems) {
 function getEditableReimbursementSnapshot(report, lineItems = []) {
   return {
     selected_approver_id: report.selected_approver_id,
+    currentBudgetHolderId: report.currentBudgetHolderId,
+    budgetHolderApprovals: report.budgetHolderApprovals || [],
     supervisorId: report.supervisorId,
     financeAdminId: report.financeAdminId,
     financeCcAdminId: report.financeCcAdminId,
@@ -168,6 +173,13 @@ function getEditableReimbursementSnapshot(report, lineItems = []) {
     lineItems: lineItems.map((item) => ({
       expenseDate: item.expenseDate,
       location: item.location,
+      destination: item.destination,
+      budgetHolderUserId: item.budgetHolderUserId,
+      projectName: item.projectName,
+      fundCode: item.fundCode,
+      projectId: item.projectId,
+      departmentId: item.departmentId,
+      activityId: item.activityId,
       category: item.category,
       description: item.description,
       invoiceNumber: item.invoiceNumber,

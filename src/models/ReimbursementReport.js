@@ -52,6 +52,39 @@ const historySchema = new mongoose.Schema(
   { _id: false }
 );
 
+const budgetHolderAllocationSchema = new mongoose.Schema(
+  {
+    destination: { type: String, trim: true, required: true },
+    projectName: { type: String, trim: true, default: "" },
+    fundCode: { type: String, trim: true, default: "" },
+    projectId: { type: String, trim: true, default: "" },
+    departmentId: { type: String, trim: true, default: "" },
+    activityId: { type: String, trim: true, default: "" },
+  },
+  { _id: false }
+);
+
+const budgetHolderApprovalSchema = new mongoose.Schema(
+  {
+    budgetHolderUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    allocations: { type: [budgetHolderAllocationSchema], default: [] },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    decidedAt: { type: Date, default: null },
+    signature: { type: String, trim: true, default: null, maxlength: 1500000 },
+    comment: { type: String, trim: true, default: null },
+  },
+  { _id: false }
+);
+
 const reimbursementReportSchema = new mongoose.Schema(
   {
     travelRequest: {
@@ -68,6 +101,15 @@ const reimbursementReportSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+    currentBudgetHolderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    budgetHolderApprovals: {
+      type: [budgetHolderApprovalSchema],
+      default: [],
     },
     supervisorId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -271,6 +313,7 @@ reimbursementReportSchema.index(
 );
 reimbursementReportSchema.index({ submittedBy: 1, createdAt: -1 });
 reimbursementReportSchema.index({ selected_approver_id: 1, status: 1 });
+reimbursementReportSchema.index({ currentBudgetHolderId: 1, status: 1 });
 reimbursementReportSchema.index({ supervisorId: 1, status: 1 });
 reimbursementReportSchema.index({ lineManagerId: 1, status: 1 });
 reimbursementReportSchema.index({ financeAdminId: 1, status: 1 });

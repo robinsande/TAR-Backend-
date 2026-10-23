@@ -44,7 +44,16 @@ const travelRequestBaseValidators = [
   body("modeOfTravel.publicTransport").optional().isBoolean(),
   body("modeOfTravel.aircraft").optional().isBoolean(),
   body("itinerary.dateFrom").isISO8601().withMessage("Start date is required"),
-  body("itinerary.dateTo").isISO8601().withMessage("End date is required"),
+  body("itinerary.dateTo")
+    .isISO8601()
+    .withMessage("End date is required")
+    .bail()
+    .custom((value, { req }) => {
+      if (new Date(value) < new Date(req.body.itinerary?.dateFrom)) {
+        throw new Error("Trip end date cannot be before its start date");
+      }
+      return true;
+    }),
   body("itinerary.destination").isString().notEmpty().withMessage("Destination is required"),
   body("itinerary.accommodationNeeded").optional().isBoolean(),
   body("travelSegments")
@@ -52,8 +61,9 @@ const travelRequestBaseValidators = [
     .isArray()
     .withMessage("Travel segments must be a list")
     .bail()
-    .custom((segments) => {
-      segments.forEach((segment) => {
+    .custom((segments, { req }) => {
+      const allocations = [];
+      segments.forEach((segment, index) => {
         if (!segment || !segment.from || !segment.to || !segment.destination || !segment.dateFrom || !segment.dateTo) {
           throw new Error("Each additional destination requires From, To, Destination, Arrival, and Departure");
         }
@@ -63,9 +73,47 @@ const travelRequestBaseValidators = [
         if (new Date(segment.dateTo) < new Date(segment.dateFrom)) {
           throw new Error("Additional destination departure cannot be before arrival");
         }
+        const project = segment.project || {};
+        if (
+          !segment.selected_budget_holder_id ||
+          !project.name ||
+          !project.businessUnit ||
+          !project.fundCode ||
+          !project.projectId ||
+          !project.departmentId ||
+          !project.activityId
+        ) {
+          throw new Error(`Additional destination ${index + 1} requires project details and a budget holder`);
+        }
+        allocations.push({
+          from: new Date(segment.dateFrom).setHours(0, 0, 0, 0),
+          to: new Date(segment.dateTo).setHours(0, 0, 0, 0),
+        });
       });
+      const itinerary = req.body?.itinerary;
+      if (segments.length && itinerary?.dateFrom && itinerary?.dateTo) {
+        allocations.unshift({
+          from: new Date(itinerary.dateFrom).setHours(0, 0, 0, 0),
+          to: new Date(itinerary.dateTo).setHours(0, 0, 0, 0),
+        });
+        allocations.sort((a, b) => a.from - b.from);
+        for (let index = 1; index < allocations.length; index += 1) {
+          if (allocations[index].from <= allocations[index - 1].to) {
+            throw new Error("Travel segment dates cannot overlap; each date must map to one fund code");
+          }
+        }
+      }
       return true;
     }),
+  body("travelSegments.*.selected_budget_holder_id")
+    .isMongoId()
+    .withMessage("Select a valid budget holder for each additional destination"),
+  body("travelSegments.*.project.name").isString().notEmpty(),
+  body("travelSegments.*.project.businessUnit").isString().notEmpty(),
+  body("travelSegments.*.project.fundCode").isString().notEmpty(),
+  body("travelSegments.*.project.projectId").isString().notEmpty(),
+  body("travelSegments.*.project.departmentId").isString().notEmpty(),
+  body("travelSegments.*.project.activityId").isString().notEmpty(),
   body("passengers")
     .isArray({ min: 1 })
     .withMessage("At least one passenger is required"),

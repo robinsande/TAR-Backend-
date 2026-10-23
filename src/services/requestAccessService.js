@@ -86,7 +86,10 @@ async function buildRequestScope(user, listScope) {
 
 async function canAccessRequest(user, request) {
   const budgetHolderUserId = idToString(request.selected_budget_holder_id?.user);
-  if (budgetHolderUserId === user.id) {
+  const fundingHolderUserIds = (request.budgetHolderApprovals || [])
+    .map((approval) => idToString(approval.budgetHolderUser || approval.budgetHolder?.user))
+    .filter(Boolean);
+  if (budgetHolderUserId === user.id || fundingHolderUserIds.includes(user.id)) {
     return true;
   }
 

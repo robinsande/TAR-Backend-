@@ -6,6 +6,10 @@ function getTravelRequestPopulateQuery(query) {
     .populate("selected_approver_id", "-passwordHash")
     .populate("selected_approver_ids", "-passwordHash")
     .populate({ path: "selected_budget_holder_id", populate: { path: "user", select: "name email" } })
+    .populate({ path: "travelSegments.selected_budget_holder_id", populate: { path: "user", select: "name email" } })
+    .populate({ path: "budgetHolderApprovals.budgetHolder", populate: { path: "user", select: "name email" } })
+    .populate("budgetHolderApprovals.budgetHolderUser", "name email")
+    .populate("budgetHolderApprovals.decidedBy", "name email")
     .populate("budgetHolderDecision.decidedBy", "name email")
     .populate("decision.decidedBy", "-passwordHash")
     .populate("passengers.user", "-passwordHash");
@@ -19,6 +23,10 @@ function getTravelRequestPdfPopulateQuery(query) {
       path: "selected_budget_holder_id",
       populate: { path: "user", select: "name email" },
     })
+    .populate({ path: "travelSegments.selected_budget_holder_id", populate: { path: "user", select: "name email" } })
+    .populate({ path: "budgetHolderApprovals.budgetHolder", populate: { path: "user", select: "name email" } })
+    .populate("budgetHolderApprovals.budgetHolderUser", "name")
+    .populate("budgetHolderApprovals.decidedBy", "name")
     .populate("budgetHolderDecision.decidedBy", "name")
     .populate("decision.decidedBy", "name position")
     .populate("passengers.user", "name employeeNumber");
@@ -37,6 +45,8 @@ function getEditableRequestSnapshot(requestDocument) {
     selected_approver_id: requestDocument.selected_approver_id,
     selected_approver_ids: requestDocument.selected_approver_ids || [requestDocument.selected_approver_id],
     selected_budget_holder_id: requestDocument.selected_budget_holder_id,
+    budgetHolderDecision: requestDocument.budgetHolderDecision,
+    budgetHolderApprovals: requestDocument.budgetHolderApprovals || [],
     project: requestDocument.project,
     assignedAreaOfOperation: requestDocument.assignedAreaOfOperation,
     employeeOffice: requestDocument.employeeOffice,
@@ -72,7 +82,7 @@ function resetRequestDecision(requestDocument) {
   };
 }
 
-function applyRequestResubmission(requestDocument, payload, approvers, passengers, budgetHolder) {
+function applyRequestResubmission(requestDocument, payload, approvers, passengers, budgetHolder, budgetHolderApprovals = []) {
   requestDocument.project = payload.project;
   requestDocument.assignedAreaOfOperation = payload.assignedAreaOfOperation;
   requestDocument.employeeOffice = payload.employeeOffice || requestDocument.employeeOffice || null;
@@ -92,6 +102,7 @@ function applyRequestResubmission(requestDocument, payload, approvers, passenger
     comment: null,
     signature: null,
   };
+  requestDocument.budgetHolderApprovals = budgetHolderApprovals;
   requestDocument.version += 1;
   requestDocument.status = "pending";
   resetRequestDecision(requestDocument);

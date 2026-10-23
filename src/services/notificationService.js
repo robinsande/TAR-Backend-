@@ -134,14 +134,17 @@ function buildTravelRequestNotificationContent(type, requestDocument, audience =
 
   if (audience === "budget_holder") {
     const requesterName = requester?.name || requestDocument.requestedBy?.name || "A staff member";
+    const allocationDetails = extras.fundCode
+      ? ` Your assigned fund code is ${extras.fundCode} for ${extras.destination || destination}.`
+      : "";
     return type === "approval_reminder"
       ? {
           subject: "Reminder: TAR awaiting your review and approval",
-          message: `${requesterName} is reminding you to review and approve the TAR for ${destination} before it proceeds to the line manager.`,
+          message: `${requesterName} is reminding you to review and approve the TAR for ${destination} before it proceeds to the line manager.${allocationDetails}`,
         }
       : {
           subject: "TAR awaiting your review and approval",
-          message: `${requesterName} has submitted a TAR, capturing the relevant charging details, for your review and approval.`,
+          message: `${requesterName} has submitted a TAR, capturing the relevant charging details, for your review and approval.${allocationDetails}`,
         };
   }
 
@@ -307,10 +310,17 @@ async function notifyTravelRequestUser(recipient, type, requestDocument, audienc
 
 async function notifyTravelRequestApprover(requestDocument, type, requester = null, extras = {}) {
   if (requestDocument.approvalStage === "budget_holder") {
-    const budgetHolderId = requestDocument.selected_budget_holder_id?._id ||
+    const nextApproval = requestDocument.budgetHolderApprovals?.find(
+      (approval) => approval.status === "pending"
+    );
+    const budgetHolderId = nextApproval?.budgetHolder?._id ||
+      nextApproval?.budgetHolder ||
+      requestDocument.selected_budget_holder_id?._id ||
       requestDocument.selected_budget_holder_id;
     const budgetHolder = budgetHolderId
-      ? await BudgetHolder.findById(budgetHolderId).populate("user")
+      ? (nextApproval?.budgetHolder?.user
+        ? nextApproval.budgetHolder
+        : await BudgetHolder.findById(budgetHolderId).populate("user"))
       : null;
     const user = budgetHolder?.user;
     if (!user || !user.isActive || !budgetHolder.isActive) {
@@ -323,7 +333,12 @@ async function notifyTravelRequestApprover(requestDocument, type, requester = nu
       requestDocument,
       "budget_holder",
       requester,
-      { ...extras, budgetHolder }
+      {
+        ...extras,
+        budgetHolder,
+        fundCode: nextApproval?.fundCode || requestDocument.project?.fundCode,
+        destination: nextApproval?.destination || requestDocument.itinerary?.destination,
+      }
     )];
   }
 

@@ -753,6 +753,44 @@ function drawTravelRequestPdfPage(doc, requestDocument) {
         ],
         height: 25,
       })),
+      ...(requestDocument.budgetHolderApprovals?.length > 1
+        ? [
+            {
+              cells: [{ width: 1, value: "Fund-Code Allocation Reviews", bold: true, align: "center" }],
+              height: 22,
+            },
+            {
+              cells: [
+                { width: 0.12, value: "Date From", bold: true, align: "center" },
+                { width: 0.12, value: "Date To", bold: true, align: "center" },
+                { width: 0.15, value: "Destination", bold: true, align: "center" },
+                { width: 0.13, value: "Fund Code", bold: true, align: "center" },
+                { width: 0.14, value: "Budget Holder", bold: true, align: "center" },
+                { width: 0.10, value: "Review", bold: true, align: "center" },
+                { width: 0.18, value: "Signature", bold: true, align: "center" },
+                { width: 0.06, value: "Stay", bold: true, align: "center" },
+              ],
+              height: 24,
+            },
+          ]
+        : []),
+      ...(requestDocument.budgetHolderApprovals?.length > 1
+        ? requestDocument.budgetHolderApprovals.map((approval) => ({
+          cells: [
+            { width: 0.12, value: formatDate(approval.dateFrom), align: "center" },
+            { width: 0.12, value: formatDate(approval.dateTo), align: "center" },
+            { width: 0.15, value: approval.destination, align: "center" },
+            { width: 0.13, value: approval.fundCode, align: "center" },
+            { width: 0.14, value: `${approval.budgetHolder?.name || approval.budgetHolder?.user?.name || ""}${approval.decidedBy?.name ? `\n${approval.decidedBy.name}` : ""}`, align: "center" },
+            { width: 0.10, value: approval.status || "pending", align: "center" },
+            { width: 0.18, value: approval.signature ? "" : "________________", image: approval.signature },
+            { width: 0.06, value: approval.segmentIndex === -1
+              ? (itinerary.accommodationNeeded ? "Yes" : "No")
+              : (requestDocument.travelSegments?.[approval.segmentIndex]?.accommodationNeeded ? "Yes" : "No"), align: "center" },
+          ],
+          height: 34,
+        }))
+        : []),
       { cells: [
         { width: 0.20, value: "Requested by:\n\nSignature:", bold: true },
         { width: 0.50, value: requestDocument.requesterSignature ? requester.name || "" : `${requester.name || ""}\n\n________________________`, image: requestDocument.requesterSignature },
@@ -1153,6 +1191,15 @@ function getVoucherExpenseDescription(destination) {
 
 function buildVoucherDailySummary(day, destination, project, peopleSoftAccount) {
   const items = day.items || [];
+  const allocation = items[0] || {};
+  const chargeProject = {
+    ...project,
+    fundCode: allocation.fundCode || project.fundCode,
+    projectId: allocation.projectId || project.projectId,
+    activityId: allocation.activityId || project.activityId,
+    departmentId: allocation.departmentId || project.departmentId,
+  };
+  const expenseDestination = allocation.destination || day.location || destination;
   const invoiceNumbers = [...new Set(items.map((item) => item.invoiceNumber).filter(Boolean))];
   const vehicleDescriptions = [...new Set(
     items
@@ -1170,14 +1217,14 @@ function buildVoucherDailySummary(day, destination, project, peopleSoftAccount) 
     day.date ? formatDate(day.date) : "—",
     vehicleDescriptions.length
       ? vehicleDescriptions.join(", ")
-      : getVoucherExpenseDescription(destination),
+    : getVoucherExpenseDescription(expenseDestination),
     formatCurrency(dayTotal),
     invoiceNumbers.length > 1 ? `${invoiceNumbers.length} invoices` : invoiceNumbers[0] || "",
     peopleSoftAccount || "",
-    project.fundCode,
-    project.projectId,
-    project.activityId,
-    project.departmentId,
+    chargeProject.fundCode,
+    chargeProject.projectId,
+    chargeProject.activityId,
+    chargeProject.departmentId,
   ];
 }
 

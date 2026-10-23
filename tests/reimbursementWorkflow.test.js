@@ -138,7 +138,7 @@ async function approveBudgetHolderRequest(requestId) {
     .send({ signature: "Budget Holder Signature" });
 }
 
-async function createApprovedTravelRequest(manager, traveller, booker = traveller) {
+async function createApprovedTravelRequest(manager, traveller, booker = traveller, requestOverrides = {}) {
   const bookerToken = await login(booker.email);
   const createResponse = await request(app)
     .post("/api/requests")
@@ -148,15 +148,33 @@ async function createApprovedTravelRequest(manager, traveller, booker = travelle
         passengers: Array.isArray(traveller)
           ? traveller.map(passengerFor)
           : [passengerFor(traveller)],
+        ...requestOverrides,
       })
     );
 
   if (createResponse.status !== 201) {
     throw new Error(`Could not create test travel request: ${createResponse.body.message || createResponse.status}`);
   }
-  const budgetHolderResponse = await approveBudgetHolderRequest(createResponse.body._id);
+  let budgetHolderResponse = await approveBudgetHolderRequest(createResponse.body._id);
   if (budgetHolderResponse.status !== 200) {
     throw new Error(`Could not approve test budget holder stage: ${budgetHolderResponse.body.message || budgetHolderResponse.status}`);
+  }
+  for (const approval of budgetHolderResponse.body.budgetHolderApprovals || []) {
+    if (approval.status !== "pending") continue;
+    const holder = await BudgetHolder.findById(
+      approval.budgetHolder?._id || approval.budgetHolder
+    );
+    const holderUser = await User.findById(holder.user);
+    const holderToken = holderUser._id.toString() === defaultBudgetHolderUserId.toString()
+      ? defaultBudgetHolderToken
+      : await login(holderUser.email);
+    budgetHolderResponse = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/approve`)
+      .set("Authorization", "Bearer " + holderToken)
+      .send({ signature: "Additional Budget Holder Signature" });
+    if (budgetHolderResponse.status !== 200) {
+      throw new Error(`Could not approve test segment budget holder: ${budgetHolderResponse.body.message || budgetHolderResponse.status}`);
+    }
   }
   const managerToken = await login(manager.email);
   await request(app)
@@ -337,6 +355,11 @@ describe("reimbursement workflow", () => {
     expect(response.body.lineItems).toHaveLength(1);
     expect(response.body.lineItems[0].category).toBe("VEHICLE FUEL");
     expect(response.body.lineItems[0].description).toBe("Vehicle fuel");
+    expect(response.body.lineItems[0]).toMatchObject({
+      destination: "Kisumu",
+      fundCode: "DEC16",
+      projectId: "CDEUKE3014",
+    });
     expect(response.body.lineItems[0].vehicleRepairPeopleSoftAccount).toBe("VEHICLE-REPAIR-ACCOUNT");
     expect(response.body.employeeNumber).toBe("R691");
     expect(response.body.department).toBe("ADMIN");
@@ -359,6 +382,146 @@ describe("reimbursement workflow", () => {
     expect(response.body.peopleSoftDepartmentId).toBe("CUSTOM-DEPARTMENT");
     expect(response.body.requesterSignedName).toBe(requester.name);
   });
+
+  it("charges advance expenses to the TAR fund code covering each expense date", async () => {
+    const manager = await createUser({
+      name: "Segment Funding Manager",
+      email: "segment-funding-manager@example.com",
+      role: "admin",
+    });
+    const requester = await createUser({
+      name: "Segment Funding Requester",
+      email: "segment-funding-requester@example.com",
+      managerId: manager._id,
+    });
+    const secondHolderUser = await createUser({
+      name: "Nakuru Holder",
+      email: "segment-funding-holder@example.com",
+      role: "approver_budget_holder",
+    });
+    const secondHolder = await BudgetHolder.create({
+      name: secondHolderUser.name,
+      email: secondHolderUser.email,
+      fundCode: "NAK20",
+      user: secondHolderUser._id,
+    });
+    const travelRequestId = await createApprovedTravelRequest(manager, requester, requester, {
+      travelSegments: [{
+        from: "Kisumu",
+        to: "Nakuru",
+        destination: "Nakuru",
+        dateFrom: "2026-07-08T00:00:00.000Z",
+        dateTo: "2026-07-09T00:00:00.000Z",
+        accommodationNeeded: true,
+        project: {
+          name: "Nakuru Response",
+          businessUnit: "KEN03",
+          fundCode: "NAK20",
+          projectId: "NAK2026",
+          departmentId: "KE0302",
+          activityId: "5",
+        },
+        selected_budget_holder_id: String(secondHolder._id),
+      }],
+    });
+    const requesterToken = await login(requester.email);
+    const payload = buildReimbursementPayload(travelRequestId, manager._id, {
+      lineItems: [
+        {
+          expenseDate: "2026-07-06T00:00:00.000Z",
+          location: "Kisumu",
+          category: "HOTEL ROOM & TAXES",
+          description: "Accommodation",
+          amount: 8500,
+        },
+        {
+          expenseDate: "2026-07-08T00:00:00.000Z",
+          location: "Nakuru",
+          category: "HOTEL ROOM & TAXES",
+          description: "Accommodation",
+          amount: 9000,
+        },
+      ],
+    });
+    const outsideItinerary = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildReimbursementPayload(travelRequestId, manager._id, {
+        lineItems: [{
+          expenseDate: "2026-07-10T00:00:00.000Z",
+          location: "Nakuru",
+          category: "HOTEL ROOM & TAXES",
+          description: "Accommodation",
+          amount: 9000,
+        }],
+      }));
+    expect(outsideItinerary.status).toBe(400);
+
+    const response = await request(app)
+      .post("/api/reimbursements")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(payload);
+    expect(response.status).toBe(201);
+    expect(response.body.lineItems.map((item) => ({
+      destination: item.destination,
+      fundCode: item.fundCode,
+      projectId: item.projectId,
+    }))).toEqual([
+      { destination: "Kisumu", fundCode: "DEC16", projectId: "CDEUKE3014" },
+      { destination: "Nakuru", fundCode: "NAK20", projectId: "NAK2026" },
+    ]);
+    expect(response.body.budgetHolderApprovals).toHaveLength(2);
+    expect(String(response.body.currentBudgetHolderId._id)).toBe(defaultBudgetHolderUserId.toString());
+
+    const secondHolderToken = await login(secondHolderUser.email);
+    const prematureReview = await request(app)
+      .patch(`/api/reimbursements/${response.body._id}/status`)
+      .set("Authorization", "Bearer " + secondHolderToken)
+      .send({ status: "review_started" });
+    expect(prematureReview.status).toBe(403);
+
+    await request(app)
+      .patch(`/api/reimbursements/${response.body._id}/status`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send({ status: "review_started" });
+    const firstApproval = await request(app)
+      .patch(`/api/reimbursements/${response.body._id}/status`)
+      .set("Authorization", "Bearer " + defaultBudgetHolderToken)
+      .send({ status: "approved", signature: "Kisumu Holder Signature" });
+    expect(firstApproval.status).toBe(200);
+    expect(firstApproval.body.status).toBe("SUBMITTED_TO_BUDGET_HOLDER");
+    expect(String(firstApproval.body.currentBudgetHolderId._id)).toBe(secondHolderUser._id.toString());
+    expect(firstApproval.body.budgetHolderApprovals.map((approval) => approval.status))
+      .toEqual(["approved", "pending"]);
+
+    const pendingForSecondHolder = await request(app)
+      .get("/api/reimbursements/pending-approvals")
+      .set("Authorization", "Bearer " + secondHolderToken);
+    expect(pendingForSecondHolder.status).toBe(200);
+    expect(pendingForSecondHolder.body.map((report) => report._id))
+      .toContain(response.body._id);
+    await request(app)
+      .patch(`/api/reimbursements/${response.body._id}/status`)
+      .set("Authorization", "Bearer " + secondHolderToken)
+      .send({ status: "review_started" });
+    const finalHolderApproval = await request(app)
+      .patch(`/api/reimbursements/${response.body._id}/status`)
+      .set("Authorization", "Bearer " + secondHolderToken)
+      .send({ status: "approved", signature: "Nakuru Holder Signature" });
+    expect(finalHolderApproval.status).toBe(200);
+    expect(finalHolderApproval.body.status).toBe("SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT");
+    expect(finalHolderApproval.body.currentBudgetHolderId).toBeNull();
+    expect(finalHolderApproval.body.budgetHolderApprovals.map((approval) => approval.status))
+      .toEqual(["approved", "approved"]);
+
+    const managerToken = await login(manager.email);
+    const lineManagerAcknowledgement = await request(app)
+      .patch(`/api/reimbursements/${response.body._id}/status`)
+      .set("Authorization", "Bearer " + managerToken)
+      .send({ status: "acknowledged", signature: testRequesterSignature });
+    expect(lineManagerAcknowledgement.status).toBe(200);
+    expect(lineManagerAcknowledgement.body.status).toBe("APPROVED_FOR_FINANCE_SUBMISSION");
+  }, 30000);
 
   it("allows no Supervisor and rejects assigning the TAR Line Manager to both roles", async () => {
     const manager = await createUser({
@@ -1496,7 +1659,14 @@ describe("reimbursement workflow", () => {
       email: "requester@example.com",
       managerId: manager._id,
     });
-    const travelRequestId = await createApprovedTravelRequest(manager, requester);
+    const travelRequestId = await createApprovedTravelRequest(manager, requester, requester, {
+      itinerary: {
+        dateFrom: "2026-07-01T00:00:00.000Z",
+        dateTo: "2026-07-30T00:00:00.000Z",
+        destination: "Kisumu",
+        accommodationNeeded: true,
+      },
+    });
     const requesterToken = await login(requester.email);
     const lineItems = Array.from({ length: 31 }, (_, index) => {
       const date = new Date(Date.UTC(2026, 6, 1 + index));

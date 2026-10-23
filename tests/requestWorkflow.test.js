@@ -468,6 +468,82 @@ describe("request scoping and workflow", () => {
     expect(managerApproval.body.status).toBe("approved");
   });
 
+  it("routes each travel segment fund code to its budget holder before sending the TAR to the line manager", async () => {
+    const requester = await createUser({
+      name: "Multi Destination Requester",
+      email: "multi-destination-requester@example.com",
+    });
+    const manager = await createUser({
+      name: "Multi Destination Manager",
+      email: "multi-destination-manager@example.com",
+      role: "admin",
+    });
+    const secondHolderUser = await createUser({
+      name: "Nakuru Budget Holder",
+      email: "nakuru-budget-holder@example.com",
+      role: "approver_budget_holder",
+    });
+    const secondHolder = await BudgetHolder.create({
+      name: secondHolderUser.name,
+      email: secondHolderUser.email,
+      fundCode: "NAK20",
+      user: secondHolderUser._id,
+    });
+    const requesterToken = await login(requester.email);
+    const secondHolderToken = await login(secondHolderUser.email);
+
+    const createResponse = await request(app)
+      .post("/api/requests")
+      .set("Authorization", "Bearer " + requesterToken)
+      .send(buildRequestPayload(manager._id, {
+        passengers: [passengerFor(requester)],
+        travelSegments: [{
+          from: "Kisumu",
+          to: "Nakuru",
+          destination: "Nakuru",
+          dateFrom: "2026-07-08",
+          dateTo: "2026-07-09",
+          accommodationNeeded: true,
+          project: {
+            name: "Nakuru Response",
+            businessUnit: "KEN03",
+            fundCode: "NAK20",
+            projectId: "NAK2026",
+            departmentId: "KE0302",
+            activityId: "5",
+          },
+          selected_budget_holder_id: String(secondHolder._id),
+        }],
+      }));
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.budgetHolderApprovals.map((approval) => approval.fundCode))
+      .toEqual(["DEC16", "NAK20"]);
+    const secondHolderQueueBeforePrimaryApproval = await request(app)
+      .get("/api/requests/pending-my-budget-approval")
+      .set("Authorization", "Bearer " + secondHolderToken);
+    expect(secondHolderQueueBeforePrimaryApproval.body).toHaveLength(0);
+
+    const primaryApproval = await approveBudgetHolderRequestFor(createResponse.body._id);
+    expect(primaryApproval.status).toBe(200);
+    expect(primaryApproval.body.approvalStage).toBe("budget_holder");
+    expect(primaryApproval.body.budgetHolderApprovals.map((approval) => approval.status))
+      .toEqual(["approved", "pending"]);
+
+    const secondHolderQueue = await request(app)
+      .get("/api/requests/pending-my-budget-approval")
+      .set("Authorization", "Bearer " + secondHolderToken);
+    expect(secondHolderQueue.body.map((tar) => tar._id)).toContain(createResponse.body._id);
+    const segmentApproval = await request(app)
+      .patch(`/api/requests/${createResponse.body._id}/budget-holder/approve`)
+      .set("Authorization", "Bearer " + secondHolderToken)
+      .send({ signature: "Nakuru Holder Signature" });
+    expect(segmentApproval.status).toBe(200);
+    expect(segmentApproval.body.approvalStage).toBe("line_manager");
+    expect(segmentApproval.body.budgetHolderApprovals.map((approval) => approval.status))
+      .toEqual(["approved", "approved"]);
+  });
+
   it("lets only the selected budget holder reject and notify the requester", async () => {
     const manager = await createUser({
       name: "Manager Admin",

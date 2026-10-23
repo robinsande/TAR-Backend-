@@ -17,6 +17,17 @@ const expenseLineItemSchema = new mongoose.Schema(
       trim: true,
       required: true,
     },
+    destination: { type: String, trim: true, default: "" },
+    projectName: { type: String, trim: true, default: "" },
+    fundCode: { type: String, trim: true, default: "" },
+    projectId: { type: String, trim: true, default: "" },
+    departmentId: { type: String, trim: true, default: "" },
+    activityId: { type: String, trim: true, default: "" },
+    budgetHolderUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     category: {
       type: String,
       enum: EXPENSE_CATEGORIES,

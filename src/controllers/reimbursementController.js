@@ -76,7 +76,7 @@ const APPROVAL_STAGES = {
   SUBMITTED_TO_BUDGET_HOLDER: {
     review: "BUDGET_HOLDER_REVIEW",
     level: "BUDGET_HOLDER",
-    assignedField: "selected_approver_id",
+    assignedField: "currentBudgetHolderId",
     approverRole: "approver_budget_holder",
     approved: "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
     declined: "BUDGET_HOLDER_DECLINED",
@@ -84,7 +84,7 @@ const APPROVAL_STAGES = {
   BUDGET_HOLDER_REVIEW: {
     review: "BUDGET_HOLDER_REVIEW",
     level: "BUDGET_HOLDER",
-    assignedField: "selected_approver_id",
+    assignedField: "currentBudgetHolderId",
     approverRole: "approver_budget_holder",
     approved: "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
     declined: "BUDGET_HOLDER_DECLINED",
@@ -181,6 +181,155 @@ function assertStandardExpenseRates(lineItems) {
   }
 }
 
+function getFundingAllocationForDate(travelRequest, expenseDate) {
+  const targetDate = new Date(expenseDate);
+  if (Number.isNaN(targetDate.getTime())) {
+    throw new HttpError(400, "Each expense must have a valid date");
+  }
+  const dateKey = targetDate.toISOString().slice(0, 10);
+  const allocations = [
+    {
+      segmentIndex: -1,
+      dateFrom: travelRequest.itinerary?.dateFrom,
+      dateTo: travelRequest.itinerary?.dateTo,
+      destination: travelRequest.itinerary?.destination,
+      project: travelRequest.project,
+    },
+    ...(travelRequest.travelSegments || []).map((segment, segmentIndex) => ({
+      segmentIndex,
+      dateFrom: segment.dateFrom,
+      dateTo: segment.dateTo,
+      destination: segment.destination,
+      project: segment.project || travelRequest.project,
+    })),
+  ];
+  const matches = allocations.filter((allocation) => {
+    if (!allocation.dateFrom || !allocation.dateTo) return false;
+    const from = new Date(allocation.dateFrom).toISOString().slice(0, 10);
+    const to = new Date(allocation.dateTo).toISOString().slice(0, 10);
+    return dateKey >= from && dateKey <= to;
+  });
+  if (matches.length !== 1) {
+    throw new HttpError(
+      400,
+      matches.length
+        ? `Expense date ${dateKey} matches more than one TAR fund code`
+        : `Expense date ${dateKey} is outside the approved TAR itinerary dates`
+    );
+  }
+  const allocation = matches[0];
+  const approval = (travelRequest.budgetHolderApprovals || []).find(
+    (item) => item.segmentIndex === allocation.segmentIndex
+  );
+  const segment = allocation.segmentIndex >= 0
+    ? travelRequest.travelSegments?.[allocation.segmentIndex]
+    : null;
+  const holder = segment?.selected_budget_holder_id ||
+    travelRequest.selected_budget_holder_id;
+  return {
+    ...allocation,
+    budgetHolderUserId:
+      holder?.user?._id ||
+      holder?.user ||
+      approval?.budgetHolderUser?._id ||
+      approval?.budgetHolderUser ||
+      null,
+  };
+}
+
+function allocateExpensesToTravelFunding(lineItems, travelRequest, fallbackBudgetHolderId) {
+  return lineItems.map((item) => {
+    const allocation = getFundingAllocationForDate(travelRequest, item.expenseDate);
+    const project = allocation.project || {};
+    return {
+      ...item,
+      location: allocation.destination || item.location,
+      destination: allocation.destination || "",
+      projectName: project.name || "",
+      fundCode: project.fundCode || "",
+      projectId: project.projectId || "",
+      departmentId: project.departmentId || "",
+      activityId: project.activityId || "",
+      budgetHolderUserId: allocation.budgetHolderUserId || fallbackBudgetHolderId,
+      description: ["VEHICLE FUEL", "VEHICLE MAINTENANCE"].includes(item.category)
+        ? item.description
+        : getVoucherExpenseDescription(allocation.destination),
+    };
+  });
+}
+
+async function buildBudgetHolderApprovals(lineItems, fallbackBudgetHolderId) {
+  const grouped = new Map();
+  for (const item of lineItems) {
+    const budgetHolderUserId = item.budgetHolderUserId || fallbackBudgetHolderId;
+    const key = String(budgetHolderUserId || "");
+    if (!key) throw new HttpError(400, "A Budget Holder is required for every advance fund allocation");
+
+    let group = grouped.get(key);
+    if (!group) {
+      group = {
+        budgetHolderUser: budgetHolderUserId,
+        allocations: new Map(),
+        firstExpenseDate: new Date(item.expenseDate).getTime(),
+      };
+      grouped.set(key, group);
+    }
+    group.firstExpenseDate = Math.min(
+      group.firstExpenseDate,
+      new Date(item.expenseDate).getTime()
+    );
+    const allocationKey = [
+      item.destination,
+      item.projectName,
+      item.fundCode,
+      item.projectId,
+      item.departmentId,
+      item.activityId,
+    ].join("|");
+    if (!group.allocations.has(allocationKey)) {
+      group.allocations.set(allocationKey, {
+        destination: item.destination || item.location || "Travel",
+        projectName: item.projectName || "",
+        fundCode: item.fundCode || "",
+        projectId: item.projectId || "",
+        departmentId: item.departmentId || "",
+        activityId: item.activityId || "",
+      });
+    }
+  }
+
+  const orderedGroups = [...grouped.values()].sort(
+    (left, right) => left.firstExpenseDate - right.firstExpenseDate
+  );
+  const activeHolders = await User.find({
+    _id: { $in: orderedGroups.map((group) => group.budgetHolderUser) },
+    role: { $in: ["admin", "approver_budget_holder"] },
+    isActive: true,
+  }).select("_id");
+  const activeHolderIds = new Set(activeHolders.map((holder) => String(holder._id)));
+  if (orderedGroups.some((group) => !activeHolderIds.has(String(group.budgetHolderUser)))) {
+    throw new HttpError(400, "Every TAR fund allocation must have an active Budget Holder");
+  }
+
+  return orderedGroups.map((group) => ({
+    budgetHolderUser: group.budgetHolderUser,
+    allocations: [...group.allocations.values()],
+    status: "pending",
+  }));
+}
+
+function ensureSupervisorIsNotBudgetHolder(supervisor, budgetHolderApprovals) {
+  if (
+    supervisor &&
+    budgetHolderApprovals.some(
+      (approval) =>
+        String(approval.budgetHolderUser) === String(supervisor._id)
+    )
+  ) {
+    throw new HttpError(400, "A Budget Holder cannot also be the advance Supervisor");
+  }
+}
+
 async function resolveOptionalSupervisor(supervisorId, submitter, budgetHolder, passengers, lineManager) {
   if (!supervisorId) return null;
 
@@ -262,10 +411,16 @@ function visibleAttachments(report, user) {
   if (reportOwnerId === user.id) return report.attachments || [];
   const lineManagerId = String(report.lineManagerId?._id || report.lineManagerId || "");
   const budgetHolderId = String(report.selected_approver_id?._id || report.selected_approver_id || "");
+  const budgetHolderIds = new Set([
+    budgetHolderId,
+    ...(report.budgetHolderApprovals || []).map((approval) =>
+      String(approval.budgetHolderUser?._id || approval.budgetHolderUser || "")
+    ),
+  ]);
   if (lineManagerId === user.id) {
     return report.attachments || [];
   }
-  if (budgetHolderId === user.id) {
+  if (budgetHolderIds.has(user.id)) {
     return (report.attachments || []).filter((attachment) => attachment.category === "financial");
   }
   if (userHasRole(user, "finance_admin")) {
@@ -346,32 +501,40 @@ async function createReimbursement(req, res) {
 
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
-  const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
-    ...item,
-    description: ["VEHICLE FUEL", "VEHICLE MAINTENANCE"].includes(item.category)
-      ? item.description
-      : getVoucherExpenseDescription(travelRequest.itinerary?.destination),
-  }));
+  const lineItems = allocateExpensesToTravelFunding(
+    normalizeLineItems(req.body.lineItems),
+    travelRequest,
+    budgetHolder._id
+  );
+  const budgetHolderApprovals = await buildBudgetHolderApprovals(lineItems, budgetHolder._id);
+  ensureSupervisorIsNotBudgetHolder(supervisor, budgetHolderApprovals);
+  for (const approval of budgetHolderApprovals) {
+    ensureApproverNotOnRequest(approval.budgetHolderUser, submitter._id, travelRequest.passengers);
+  }
+  const initialBudgetHolderId = budgetHolderApprovals[0]?.budgetHolderUser || budgetHolder._id;
   let report;
 
   try {
+    const draftData = buildReimbursementDraftData(
+      {
+        ...req.body,
+        travelRequestId: travelRequest._id,
+        financeAdminId: null,
+        financeCcAdminId: null,
+        requesterSignedName,
+        requesterSignature,
+        peopleSoftAccount,
+      },
+      submitter._id,
+      supervisor?._id || null,
+      budgetHolder._id,
+      lineManager._id,
+      submitter
+    );
+    draftData.currentBudgetHolderId = initialBudgetHolderId;
+    draftData.budgetHolderApprovals = budgetHolderApprovals;
     report = await ReimbursementReport.create(
-      buildReimbursementDraftData(
-        {
-          ...req.body,
-          travelRequestId: travelRequest._id,
-          financeAdminId: null,
-          financeCcAdminId: null,
-          requesterSignedName,
-          requesterSignature,
-          peopleSoftAccount,
-        },
-        submitter._id,
-        supervisor?._id || null,
-        budgetHolder._id,
-        lineManager._id,
-        submitter
-      )
+      draftData
     );
 
     await replaceReportLineItems(report._id, lineItems);
@@ -436,12 +599,11 @@ async function previewReimbursement(req, res) {
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
 
-  const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
-    ...item,
-    description: ["VEHICLE FUEL", "VEHICLE MAINTENANCE"].includes(item.category)
-      ? item.description
-      : getVoucherExpenseDescription(travelRequest.itinerary?.destination),
-  }));
+  const lineItems = allocateExpensesToTravelFunding(
+    normalizeLineItems(req.body.lineItems),
+    travelRequest,
+    budgetHolder._id
+  );
   const totalAmountKsh = lineItems.reduce(
     (total, item) => total + Number(item.amount.toString()),
     0
@@ -554,7 +716,13 @@ async function getPendingApprovals(req, res) {
   }
   if (hasLineManagerRole(req.user)) {
     stages.push({
-      selected_approver_id: req.user.id,
+      $or: [
+        { currentBudgetHolderId: req.user.id },
+        {
+          currentBudgetHolderId: null,
+          selected_approver_id: req.user.id,
+        },
+      ],
       status: { $in: ["SUBMITTED_TO_BUDGET_HOLDER", "BUDGET_HOLDER_REVIEW"] },
     });
     stages.push({
@@ -656,12 +824,17 @@ async function updateReimbursement(req, res) {
   const peopleSoftAccount = normalizePeopleSoftAccount(req.body.peopleSoftAccount);
   assertMaximumExpenseDays(req.body.lineItems);
   assertStandardExpenseRates(req.body.lineItems);
-  const lineItems = normalizeLineItems(req.body.lineItems).map((item) => ({
-    ...item,
-    description: ["VEHICLE FUEL", "VEHICLE MAINTENANCE"].includes(item.category)
-      ? item.description
-      : getVoucherExpenseDescription(travelRequest.itinerary?.destination),
-  }));
+  const lineItems = allocateExpensesToTravelFunding(
+    normalizeLineItems(req.body.lineItems),
+    travelRequest,
+    budgetHolder._id
+  );
+  const budgetHolderApprovals = await buildBudgetHolderApprovals(lineItems, budgetHolder._id);
+  ensureSupervisorIsNotBudgetHolder(supervisor, budgetHolderApprovals);
+  for (const approval of budgetHolderApprovals) {
+    ensureApproverNotOnRequest(approval.budgetHolderUser, req.currentUser._id, travelRequest.passengers);
+  }
+  const initialBudgetHolderId = budgetHolderApprovals[0]?.budgetHolderUser || budgetHolder._id;
   const existingLineItems = await ExpenseLineItem.find({ report: report._id }).sort({
     expenseDate: 1,
   });
@@ -676,6 +849,8 @@ async function updateReimbursement(req, res) {
   applyReimbursementResubmission(report, req.body, supervisor?._id || null);
   report.lineManagerId = lineManager._id;
   report.selected_approver_id = budgetHolder._id;
+  report.currentBudgetHolderId = initialBudgetHolderId;
+  report.budgetHolderApprovals = budgetHolderApprovals;
   report.travelRequest = travelRequest._id;
   report.financeAdminId = null;
   report.financeCcAdminId = null;
@@ -752,7 +927,8 @@ async function updateReimbursement(req, res) {
   });
 
   const response = await buildReimbursementResponse(report._id);
-  await notifyReimbursementUser(supervisor || budgetHolder, "reimbursement_resubmitted", response);
+  const firstBudgetHolder = await User.findById(initialBudgetHolderId);
+  await notifyReimbursementUser(supervisor || firstBudgetHolder || budgetHolder, "reimbursement_resubmitted", response);
 
   return res.json(response);
 }
@@ -841,8 +1017,12 @@ async function updateReimbursementStatus(req, res) {
     const stage = APPROVAL_STAGES[report.status];
     if (!stage) throw new HttpError(400, "This reimbursement is not awaiting an approval decision");
 
+    const assignedApproverId = stage.assignedField
+      ? report[stage.assignedField] ||
+        (stage.level === "BUDGET_HOLDER" ? report.selected_approver_id : null)
+      : null;
     const isAssignedApprover = stage.assignedField
-      ? String(report[stage.assignedField] || "") === req.user.id ||
+      ? String(assignedApproverId || "") === req.user.id ||
         (stage.level === "FINANCE_ADMIN" && !report[stage.assignedField] &&
           userHasRole(req.user, stage.approverRole))
       : userHasRole(req.user, stage.approverRole);
@@ -898,9 +1078,45 @@ async function updateReimbursementStatus(req, res) {
           report.budgetHolderSignature = req.body.signature || report.budgetHolderSignedName;
           report.budgetHolderApprovedBy = req.user.id;
           report.budgetHolderApprovedAt = new Date();
+          const currentHolderApproval = report.budgetHolderApprovals.find(
+            (approval) =>
+              String(approval.budgetHolderUser) === req.user.id &&
+              approval.status === "pending"
+          );
+          if (currentHolderApproval) {
+            currentHolderApproval.status = "approved";
+            currentHolderApproval.decidedBy = req.user.id;
+            currentHolderApproval.decidedAt = new Date();
+            currentHolderApproval.signature =
+              req.body.signature || report.budgetHolderSignedName;
+            currentHolderApproval.comment = comment?.trim() || null;
+            const nextHolderApproval = report.budgetHolderApprovals.find(
+              (approval) => approval.status === "pending"
+            );
+            if (nextHolderApproval) {
+              report.currentBudgetHolderId = nextHolderApproval.budgetHolderUser;
+              report.status = "SUBMITTED_TO_BUDGET_HOLDER";
+            } else {
+              report.currentBudgetHolderId = null;
+            }
+          }
           const budgetHolderId = String(report.selected_approver_id || "");
           const lineManagerId = String(report.lineManagerId || "");
-          if (!lineManagerId || lineManagerId === budgetHolderId) {
+          if (
+            !currentHolderApproval &&
+            (!lineManagerId || lineManagerId === budgetHolderId)
+          ) {
+            report.status = "APPROVED_FOR_FINANCE_SUBMISSION";
+            addApprovalHistory(report, req, {
+              level: "SYSTEM",
+              action: "APPROVED_FOR_FINANCE_SUBMISSION",
+              resultingStatus: "APPROVED_FOR_FINANCE_SUBMISSION",
+            });
+          } else if (
+            currentHolderApproval &&
+            !report.budgetHolderApprovals.some((approval) => approval.status === "pending") &&
+            (!lineManagerId || lineManagerId === budgetHolderId)
+          ) {
             report.status = "APPROVED_FOR_FINANCE_SUBMISSION";
             addApprovalHistory(report, req, {
               level: "SYSTEM",
@@ -942,6 +1158,17 @@ async function updateReimbursementStatus(req, res) {
           report.budgetHolderDeclinedBy = req.user.id;
           report.budgetHolderDeclinedAt = new Date();
           report.budgetHolderDeclineReason = comment.trim();
+          const currentHolderApproval = report.budgetHolderApprovals.find(
+            (approval) =>
+              String(approval.budgetHolderUser) === req.user.id &&
+              approval.status === "pending"
+          );
+          if (currentHolderApproval) {
+            currentHolderApproval.status = "rejected";
+            currentHolderApproval.decidedBy = req.user.id;
+            currentHolderApproval.decidedAt = new Date();
+            currentHolderApproval.comment = comment.trim();
+          }
         } else {
           report.financeDeclinedBy = req.user.id;
           report.financeDeclinedAt = new Date();
@@ -1008,7 +1235,12 @@ async function updateReimbursementStatus(req, res) {
     if (report.status === "PAYMENT_PROCESSING" && response.financeCcAdminId) {
       await notifyReimbursementUser(response.financeCcAdminId, "reimbursement_cc", response);
     }
-    if (report.status !== "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT") {
+    if (
+      ![
+        "SUBMITTED_TO_BUDGET_HOLDER",
+        "SUBMITTED_TO_LINE_MANAGER_ACKNOWLEDGEMENT",
+      ].includes(report.status)
+    ) {
       await notifyReimbursementUser(submitter, "reimbursement_approved", response);
     }
   }

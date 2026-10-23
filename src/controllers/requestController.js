@@ -49,24 +49,87 @@ async function resolveApproversForRequest(approverIds, requesterId, passengers) 
 }
 
 function applyRequesterBudgetHolderApproval(requestDocument, requester, budgetHolder, signature) {
-  const budgetHolderUserId = budgetHolder?.user?._id || budgetHolder?.user;
-  if (!budgetHolderUserId || String(budgetHolderUserId) !== String(requester._id)) {
-    return false;
-  }
-
   const decidedAt = new Date();
   const requesterSignature = String(signature || "").trim() || requester.name.trim();
-  requestDocument.requesterSignature = requesterSignature;
-  requestDocument.approvalStage = "line_manager";
-  requestDocument.budgetHolderDecision = {
-    status: "approved",
-    decidedBy: requester._id,
-    decidedAt,
-    comment: "Automatically approved because the requester is the selected budget holder",
-    signature: requesterSignature,
-    submittedFundCode: requestDocument.project.fundCode,
+  let approvedAny = false;
+
+  for (const approval of requestDocument.budgetHolderApprovals || []) {
+    if (approval.status !== "pending") continue;
+    const holderUserId = approval.budgetHolderUser;
+    if (String(holderUserId || "") !== String(requester._id)) break;
+    approval.status = "approved";
+    approval.decidedBy = requester._id;
+    approval.decidedAt = decidedAt;
+    approval.comment = "Automatically approved because the requester is the selected budget holder";
+    approval.signature = requesterSignature;
+    approvedAny = true;
+
+    if (approval.segmentIndex === -1) {
+      requestDocument.budgetHolderDecision = {
+        status: "approved",
+        decidedBy: requester._id,
+        decidedAt,
+        comment: approval.comment,
+        signature: requesterSignature,
+        submittedFundCode: approval.fundCode,
+      };
+    }
+  }
+
+  if (approvedAny) requestDocument.requesterSignature = requesterSignature;
+  requestDocument.approvalStage = (requestDocument.budgetHolderApprovals || [])
+    .some((approval) => approval.status === "pending")
+    ? "budget_holder"
+    : "line_manager";
+  return approvedAny;
+}
+
+async function resolveFundingBudgetHolders(primaryId, project, itinerary, segments = []) {
+  const primary = await BudgetHolder.findOne({ _id: primaryId, isActive: true }).populate("user");
+  const validateHolder = (holder) => {
+    if (!holder || !holder.user?.isActive || holder.user.role !== "approver_budget_holder") {
+      throw new HttpError(400, "Select an active account with the Approver / Budget Holder role for each fund code");
+    }
+    return holder;
   };
-  return true;
+  validateHolder(primary);
+
+  const segmentHolders = await Promise.all((segments || []).map((segment) =>
+    BudgetHolder.findOne({ _id: segment.selected_budget_holder_id, isActive: true }).populate("user")
+  ));
+  segmentHolders.forEach(validateHolder);
+
+  const approvals = [
+    {
+      segmentIndex: -1,
+      budgetHolder: primary._id,
+      budgetHolderUser: primary.user._id,
+      fundCode: project.fundCode,
+      destination: itinerary.destination,
+      dateFrom: itinerary.dateFrom,
+      dateTo: itinerary.dateTo,
+      status: "pending",
+    },
+    ...(segments || []).map((segment, index) => ({
+      segmentIndex: index,
+      budgetHolder: segmentHolders[index]._id,
+      budgetHolderUser: segmentHolders[index].user._id,
+      fundCode: segment.project.fundCode,
+      destination: segment.destination,
+      dateFrom: segment.dateFrom,
+      dateTo: segment.dateTo,
+      status: "pending",
+    })),
+  ].sort((left, right) => new Date(left.dateFrom) - new Date(right.dateFrom));
+
+  return {
+    primary,
+    segments: (segments || []).map((segment, index) => ({
+      ...segment,
+      selected_budget_holder_id: segmentHolders[index]._id,
+    })),
+    approvals,
+  };
 }
 
 async function createRequest(req, res) {
@@ -80,18 +143,13 @@ async function createRequest(req, res) {
     throw new HttpError(400, "Select a budget holder before submitting this TAR");
   }
 
-  const budgetHolder = req.body.selected_budget_holder_id
-    ? await BudgetHolder.findOne({
-      _id: req.body.selected_budget_holder_id,
-      isActive: true,
-    }).populate("user")
-    : null;
-  if (
-    req.body.selected_budget_holder_id &&
-    (!budgetHolder || !budgetHolder.user?.isActive || budgetHolder.user.role !== "approver_budget_holder")
-  ) {
-    throw new HttpError(400, "Select an active account with the Approver / Budget Holder role");
-  }
+  const funding = await resolveFundingBudgetHolders(
+    req.body.selected_budget_holder_id,
+    req.body.project,
+    req.body.itinerary,
+    req.body.travelSegments || []
+  );
+  const budgetHolder = funding.primary;
 
   const passengers = await resolvePassengers(req.body.passengers);
   const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
@@ -116,7 +174,8 @@ async function createRequest(req, res) {
     requesterSignature: req.body.requesterSignature || null,
     modeOfTravel: req.body.modeOfTravel || {},
     itinerary: req.body.itinerary,
-    travelSegments: req.body.travelSegments || [],
+    travelSegments: funding.segments,
+    budgetHolderApprovals: funding.approvals,
     passengers,
     submittedAt: new Date(),
   });
@@ -445,15 +504,24 @@ async function approveRequest(req, res) {
 }
 
 async function getPendingMyBudgetApproval(req, res) {
-  const holderIds = await BudgetHolder.find({ user: req.user.id, isActive: true }).distinct("_id");
   const requests = await getTravelRequestPopulateQuery(
     TravelRequest.find({
-      selected_budget_holder_id: { $in: holderIds },
       approvalStage: "budget_holder",
       status: "pending",
     }).sort({ createdAt: -1 })
   );
-  return res.json(requests);
+  const pendingForUser = requests.filter((requestDocument) => {
+    const nextApproval = requestDocument.budgetHolderApprovals?.find(
+      (approval) => approval.status === "pending"
+    );
+    if (nextApproval) {
+      return String(nextApproval.budgetHolderUser?._id || nextApproval.budgetHolderUser) === req.user.id;
+    }
+    const holderUserId = requestDocument.selected_budget_holder_id?.user?._id ||
+      requestDocument.selected_budget_holder_id?.user;
+    return String(holderUserId || "") === req.user.id;
+  });
+  return res.json(pendingForUser);
 }
 
 async function decideBudgetHolderRequest(req, res, decisionStatus) {
@@ -461,7 +529,9 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
     .populate("requestedBy", "-passwordHash")
     .populate("selected_approver_id", "name email position")
     .populate("selected_approver_ids", "name email position")
-    .populate({ path: "selected_budget_holder_id", populate: { path: "user", select: "name email isActive" } });
+    .populate({ path: "selected_budget_holder_id", populate: { path: "user", select: "name email isActive" } })
+    .populate({ path: "budgetHolderApprovals.budgetHolder", populate: { path: "user", select: "name email isActive" } })
+    .populate("budgetHolderApprovals.budgetHolderUser", "name email");
 
   if (!requestDocument) {
     throw new HttpError(404, "Travel request not found");
@@ -472,35 +542,62 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
   ) {
     throw new HttpError(400, "This request is not awaiting budget-holder approval");
   }
-  if (String(requestDocument.selected_budget_holder_id?.user?._id) !== req.user.id) {
-    throw new HttpError(403, "Only the selected budget holder can review this request");
+  const activeApproval = requestDocument.budgetHolderApprovals?.find(
+    (approval) => approval.status === "pending"
+  );
+  const holderUserId = activeApproval
+    ? activeApproval.budgetHolderUser?._id || activeApproval.budgetHolderUser
+    : requestDocument.selected_budget_holder_id?.user?._id ||
+      requestDocument.selected_budget_holder_id?.user;
+  if (String(holderUserId || "") !== req.user.id) {
+    throw new HttpError(403, "Only the budget holder assigned to the next fund code can review this request");
   }
 
-  requestDocument.budgetHolderDecision = {
-    status: decisionStatus,
-    decidedBy: req.user.id,
-    decidedAt: new Date(),
-    comment: req.body?.comment || null,
-    signature: decisionStatus === "approved" ? req.body.signature : null,
-    submittedFundCode: requestDocument.project.fundCode,
-  };
+  const decidedAt = new Date();
+  if (activeApproval) {
+    activeApproval.status = decisionStatus;
+    activeApproval.decidedBy = req.user.id;
+    activeApproval.decidedAt = decidedAt;
+    activeApproval.comment = decisionStatus === "approved" ? "Fund code reviewed" : req.body?.comment || null;
+    activeApproval.signature = decisionStatus === "approved" ? req.body.signature : null;
+    if (activeApproval.segmentIndex === -1) {
+      requestDocument.budgetHolderDecision = {
+        status: decisionStatus,
+        decidedBy: req.user.id,
+        decidedAt,
+        comment: activeApproval.comment,
+        signature: activeApproval.signature,
+        submittedFundCode: activeApproval.fundCode,
+      };
+    }
+  } else {
+    requestDocument.budgetHolderDecision = {
+      status: decisionStatus,
+      decidedBy: req.user.id,
+      decidedAt,
+      comment: decisionStatus === "approved" ? "Fund code reviewed" : req.body?.comment || null,
+      signature: decisionStatus === "approved" ? req.body.signature : null,
+      submittedFundCode: requestDocument.project.fundCode,
+    };
+  }
 
   const requester = requestDocument.requestedBy;
   let automaticallyApprovedByLineManager = false;
   if (decisionStatus === "approved") {
-    requestDocument.budgetHolderDecision.comment = "Fund code reviewed";
+    const remainingApprovals = (requestDocument.budgetHolderApprovals || [])
+      .some((approval) => approval.status === "pending");
+    requestDocument.approvalStage = remainingApprovals ? "budget_holder" : "line_manager";
     const approverIds = requestDocument.selected_approver_ids?.length
       ? requestDocument.selected_approver_ids
       : [requestDocument.selected_approver_id];
-    automaticallyApprovedByLineManager = approverIds.some(
+    automaticallyApprovedByLineManager = !remainingApprovals && approverIds.some(
       (approver) => String(approver?._id || approver) === req.user.id
     );
-    requestDocument.approvalStage = "line_manager";
     if (automaticallyApprovedByLineManager) {
       requestDocument.status = "approved";
       requestDocument.decision = {
         decidedBy: req.user.id,
-        decidedAt: requestDocument.budgetHolderDecision.decidedAt,
+        decidedAt,
         comment: "Budget holder and line-manager approval completed by the same person",
         signature: req.body.signature,
       };
@@ -515,8 +612,9 @@ async function decideBudgetHolderRequest(req, res, decisionStatus) {
     performedBy: req.user.id,
     targetRequest: requestDocument._id,
     metadata: {
-      fundCode: requestDocument.project.fundCode,
-      comment: requestDocument.budgetHolderDecision.comment,
+      fundCode: activeApproval?.fundCode || requestDocument.project.fundCode,
+      destination: activeApproval?.destination || requestDocument.itinerary.destination,
+      comment: activeApproval?.comment || requestDocument.budgetHolderDecision.comment,
     },
   });
 
@@ -624,18 +722,13 @@ async function resubmitRequest(req, res) {
   }
 
   const passengers = await resolvePassengers(req.body.passengers);
-  const budgetHolder = req.body.selected_budget_holder_id
-    ? await BudgetHolder.findOne({
-      _id: req.body.selected_budget_holder_id,
-      isActive: true,
-    }).populate("user")
-    : null;
-  if (
-    req.body.selected_budget_holder_id &&
-    (!budgetHolder || !budgetHolder.user?.isActive || budgetHolder.user.role !== "approver_budget_holder")
-  ) {
-    throw new HttpError(400, "Select an active account with the Approver / Budget Holder role");
-  }
+  const funding = await resolveFundingBudgetHolders(
+    req.body.selected_budget_holder_id,
+    req.body.project,
+    req.body.itinerary,
+    req.body.travelSegments || []
+  );
+  const budgetHolder = funding.primary;
   const requestedApproverIds = Array.isArray(req.body.selected_approver_ids) && req.body.selected_approver_ids.length
     ? req.body.selected_approver_ids
     : [req.body.selected_approver_id];
@@ -652,7 +745,14 @@ async function resubmitRequest(req, res) {
     editedAt: new Date(),
   });
 
-  applyRequestResubmission(requestDocument, req.body, approvers, passengers, budgetHolder);
+  applyRequestResubmission(
+    requestDocument,
+    { ...req.body, travelSegments: funding.segments },
+    approvers,
+    passengers,
+    budgetHolder,
+    funding.approvals
+  );
   const requesterIsBudgetHolder = applyRequesterBudgetHolderApproval(
     requestDocument,
     requestDocument.requestedBy,

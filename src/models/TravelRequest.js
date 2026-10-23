@@ -50,6 +50,13 @@ const travelSegmentSchema = new mongoose.Schema(
     destination: { type: String, required: true, trim: true },
     dateFrom: { type: Date, required: true },
     dateTo: { type: Date, required: true },
+    accommodationNeeded: { type: Boolean, default: false },
+    project: { type: projectSchema, default: null },
+    selected_budget_holder_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BudgetHolder",
+      default: null,
+    },
   },
   { _id: false }
 );
@@ -95,6 +102,36 @@ const budgetHolderDecisionSchema = new mongoose.Schema(
     comment: { type: String, trim: true, default: null },
     signature: { type: String, trim: true, default: null },
     submittedFundCode: { type: String, trim: true, default: null },
+  },
+  { _id: false }
+);
+
+const budgetHolderApprovalSchema = new mongoose.Schema(
+  {
+    segmentIndex: { type: Number, required: true, min: -1 },
+    budgetHolder: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BudgetHolder",
+      required: true,
+    },
+    budgetHolderUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    fundCode: { type: String, required: true, trim: true },
+    destination: { type: String, required: true, trim: true },
+    dateFrom: { type: Date, required: true },
+    dateTo: { type: Date, required: true },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    decidedAt: { type: Date, default: null },
+    comment: { type: String, trim: true, default: null },
+    signature: { type: String, trim: true, default: null },
   },
   { _id: false }
 );
@@ -167,6 +204,10 @@ const travelRequestSchema = new mongoose.Schema(
     budgetHolderDecision: {
       type: budgetHolderDecisionSchema,
       default: () => ({}),
+    },
+    budgetHolderApprovals: {
+      type: [budgetHolderApprovalSchema],
+      default: [],
     },
     project: {
       type: projectSchema,
@@ -249,6 +290,7 @@ travelRequestSchema.index({ requestedBy: 1, createdAt: -1 });
 travelRequestSchema.index({ "passengers.user": 1, createdAt: -1 });
 travelRequestSchema.index({ selected_approver_id: 1, status: 1 });
 travelRequestSchema.index({ selected_budget_holder_id: 1, status: 1, approvalStage: 1 });
+travelRequestSchema.index({ "budgetHolderApprovals.budgetHolder": 1, status: 1, approvalStage: 1 });
 travelRequestSchema.index({ status: 1 });
 travelRequestSchema.index({ createdAt: -1 });
 
